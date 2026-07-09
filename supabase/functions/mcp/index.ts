@@ -86,7 +86,7 @@ var get_school_overview_default = defineTool({
 // src/lib/mcp/tools/list-recent-gate-entries.ts
 import { defineTool as defineTool2 } from "npm:@lovable.dev/mcp-js@0.20.0";
 import { createClient as createClient2 } from "npm:@supabase/supabase-js@^2.105.2";
-import { z } from "npm:zod@^3.23.8";
+import { z } from "npm:zod@^4.1.13";
 var supabaseForUser2 = (ctx) => {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_PUBLISHABLE_KEY;
