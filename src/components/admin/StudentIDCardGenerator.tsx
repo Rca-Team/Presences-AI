@@ -585,14 +585,23 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const CARD_SOURCE_H = 760;
       const CARD_ASPECT = CARD_SOURCE_W / CARD_SOURCE_H;
       const TARGET_CARD_H = 86; // close to standard ID card physical height in mm
-      const CARD_H = TARGET_CARD_H;
-      const CARD_W = CARD_H * CARD_ASPECT;
+      const baseCardH = TARGET_CARD_H;
 
       const usableW = PAGE_W - PAGE_MARGIN * 2;
       const usableH = PAGE_H - PAGE_MARGIN * 2;
-      const columns = Math.max(1, Math.floor((usableW + CARD_GAP) / (CARD_W + CARD_GAP)));
-      const rows = Math.max(1, Math.floor((usableH + CARD_GAP) / (CARD_H + CARD_GAP)));
+
+      // Fixed print layout: exactly 9 cards per page (3 × 3)
+      const columns = 3;
+      const rows = 3;
       const cardsPerPage = columns * rows;
+
+      // Compute max card size that fits a 3x3 grid while preserving card aspect ratio.
+      const maxCardWFromGrid = (usableW - (columns - 1) * CARD_GAP) / columns;
+      const maxCardHFromGrid = (usableH - (rows - 1) * CARD_GAP) / rows;
+
+      const fittedCardH = Math.min(maxCardHFromGrid, maxCardWFromGrid / CARD_ASPECT);
+      const CARD_H = Math.min(baseCardH, fittedCardH);
+      const CARD_W = CARD_H * CARD_ASPECT;
 
       const contentW = columns * CARD_W + (columns - 1) * CARD_GAP;
       const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
@@ -654,7 +663,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       toast({
         title: 'PDF Ready',
-        description: `${list.length} card(s) on ${totalPages} A4 page(s) (${cardsPerPage}/page)`,
+        description: `${list.length} card(s) on ${totalPages} A4 page(s) (9/page)`,
       });
     } catch (e) {
       console.error('PDF export error:', e);
