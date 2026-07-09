@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import ClassTeacherManager from './ClassTeacherManager';
 import { supabase } from '@/integrations/supabase/client';
+import { pushNotificationService } from '@/services/PushNotificationService';
 import { useToast } from '@/hooks/use-toast';
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isWeekend } from 'date-fns';
 import {
@@ -247,6 +248,13 @@ const CategoryBasedView: React.FC = () => {
         }
       }
       toast({ title: 'Notifications Sent', description: `Sent to ${successCount} parents${failCount > 0 ? `, ${failCount} failed` : ''}` });
+
+      if (successCount > 0) {
+        pushNotificationService.showLocalNotification('📣 Class notifications sent', {
+          body: `${successCount} delivered${failCount > 0 ? `, ${failCount} failed` : ''}`,
+        }).catch(() => undefined);
+      }
+
       setNotificationOpen(false);
       setNotificationMessage('');
       setNotificationSubject('');

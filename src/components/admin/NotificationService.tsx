@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useToast } from '@/components/ui/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { pushNotificationService } from '@/services/PushNotificationService';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -173,6 +174,10 @@ const NotificationService: React.FC<NotificationServiceProps> = ({
 
       const waSent = !!data?.channels?.whatsapp?.sent;
       const waError = data?.channels?.whatsapp?.error;
+
+      pushNotificationService.showLocalNotification('✅ Parent notification sent', {
+        body: `${studentName || 'Student'} notification processed${waSent ? ' (Email + WhatsApp + SMS)' : ''}`,
+      }).catch(() => undefined);
 
       toast({
         title: "Notification Sent",
