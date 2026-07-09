@@ -157,7 +157,13 @@ var list_recent_gate_entries_default = defineTool2({
 });
 
 // src/lib/mcp/index.ts
-var projectRef = define_import_meta_env_default.VITE_SUPABASE_PROJECT_ID ?? "project-ref-unset";
+var projectRefFromUrl = (() => {
+  const url = define_import_meta_env_default.VITE_SUPABASE_URL;
+  if (!url) return null;
+  const match = url.match(/^https:\/\/([^.]+)\.supabase\.co/i);
+  return match?.[1] || null;
+})();
+var projectRef = define_import_meta_env_default.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? "project-ref-unset";
 var mcp_default = defineMcp({
   name: "presences-mcp",
   title: "Presences MCP",

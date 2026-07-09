@@ -2,7 +2,14 @@ import { auth, defineMcp } from '@lovable.dev/mcp-js';
 import getSchoolOverviewTool from './tools/get-school-overview';
 import listRecentGateEntriesTool from './tools/list-recent-gate-entries';
 
-const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? 'project-ref-unset';
+const projectRefFromUrl = (() => {
+  const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+  if (!url) return null;
+  const match = url.match(/^https:\/\/([^.]+)\.supabase\.co/i);
+  return match?.[1] || null;
+})();
+
+const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? 'project-ref-unset';
 
 export default defineMcp({
   name: 'presences-mcp',
