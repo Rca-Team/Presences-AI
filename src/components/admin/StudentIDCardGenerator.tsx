@@ -146,7 +146,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           const empKey = (metadata?.employee_id || metadata?.roll_number || deviceInfo?.employee_id || '').toString().trim();
           const studentKey = ((record as any).student_id || '').toString().trim();
           const canonicalUserId = record.user_id || (empKey ? employeeToUserId.get(empKey) : null);
-          const userId = canonicalUserId || studentKey || empKey || record.id;
+          const userId = studentKey || empKey || canonicalUserId || record.id;
           if (!uniqueStudents.has(userId)) {
             const imageCandidate = pickPreferredPhotoCandidate(
               canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
