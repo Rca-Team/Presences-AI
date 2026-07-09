@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,7 @@ const StudentDetailsTable: React.FC = () => {
   const [sectionFilter, setSectionFilter] = useState<string>('all');
   const [previewStudents, setPreviewStudents] = useState<StudentRow[] | null>(null);
   const [captureFor, setCaptureFor] = useState<StudentRow | null>(null);
+  const refreshTimerRef = useRef<number | null>(null);
 
   const fetchStudents = async () => {
     setLoading(true);
@@ -153,6 +154,28 @@ const StudentDetailsTable: React.FC = () => {
 
   useEffect(() => {
     fetchStudents();
+  }, []);
+
+  useEffect(() => {
+    const queueRefresh = () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(() => {
+        fetchStudents();
+        refreshTimerRef.current = null;
+      }, 300);
+    };
+
+    const channel = supabase
+      .channel('student-details-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, queueRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'face_descriptors' }, queueRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, queueRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const filtered = useMemo(() => {
