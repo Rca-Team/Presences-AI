@@ -585,8 +585,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const CARD_SOURCE_H = 760;
       const CARD_ASPECT = CARD_SOURCE_W / CARD_SOURCE_H;
       const TARGET_CARD_H = 86; // close to standard ID card physical height in mm
-      const CARD_H = TARGET_CARD_H;
-      const CARD_W = CARD_H * CARD_ASPECT;
+      const baseCardH = TARGET_CARD_H;
 
       const usableW = PAGE_W - PAGE_MARGIN * 2;
       const usableH = PAGE_H - PAGE_MARGIN * 2;
@@ -601,9 +600,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const maxCardHFromGrid = (usableH - (rows - 1) * CARD_GAP) / rows;
 
       const fittedCardH = Math.min(maxCardHFromGrid, maxCardWFromGrid / CARD_ASPECT);
-      const fittedCardW = fittedCardH * CARD_ASPECT;
-
-      const CARD_H = Math.min(CARD_H, fittedCardH);
+      const CARD_H = Math.min(baseCardH, fittedCardH);
       const CARD_W = CARD_H * CARD_ASPECT;
 
       const contentW = columns * CARD_W + (columns - 1) * CARD_GAP;
