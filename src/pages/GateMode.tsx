@@ -184,7 +184,9 @@ const GateMode = () => {
         const metadata = (row.device_info as any)?.metadata || {};
         const rowClass = metadata.class || null;
         const rowSection = metadata.section || null;
-        return (!className || rowClass === className) && (!section || rowSection === section);
+        const classMatches = !className || !rowClass || rowClass === className;
+        const sectionMatches = !section || !rowSection || rowSection === section;
+        return classMatches && sectionMatches;
       });
 
       const registeredIds = new Set(
