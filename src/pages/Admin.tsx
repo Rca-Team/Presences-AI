@@ -162,12 +162,19 @@ const Admin = () => {
         return lower;
       };
 
+      const isKnownIdentity = (value: string | null | undefined) => {
+        if (!value) return false;
+        const normalized = String(value).trim().toLowerCase();
+        return !['unknown', 'unknown student', 'user', 'n/a', 'na', 'null', 'undefined'].includes(normalized);
+      };
+
       const presentSet = new Set<string>();
       const lateSet = new Set<string>();
       const countedSet = new Set<string>();
 
       (todayData || []).forEach(r => {
         const id = r.student_id || r.user_id || r.id;
+        if (!isKnownIdentity(id)) return;
         if (!id || countedSet.has(id)) return;
         const status = normalizeStatus(r.status || '');
         if (status === 'present') {
@@ -182,7 +189,7 @@ const Admin = () => {
       // Gate entries fill in any student not already counted today
       (gateData || []).forEach(g => {
         const id = g.student_id;
-        if (id && !countedSet.has(id)) {
+        if (isKnownIdentity(id) && !countedSet.has(id)) {
           presentSet.add(id);
           countedSet.add(id);
         }
