@@ -78,6 +78,33 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewStudent, setPreviewStudent] = useState<StudentData | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
+  const refreshTimerRef = useRef<number | null>(null);
+
+  const isMeaningfulIdentity = (value: unknown) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return Boolean(normalized && !['unknown', 'null', 'undefined', 'n/a', 'na', '-'].includes(normalized));
+  };
+
+  const pickIdentityKey = (...candidates: unknown[]) => {
+    for (const candidate of candidates) {
+      if (isMeaningfulIdentity(candidate)) return String(candidate).trim();
+    }
+    return '';
+  };
+
+  const waitForEmbeddedImages = async (container: HTMLElement) => {
+    const images = Array.from(container.querySelectorAll('img'));
+    if (images.length === 0) return;
+    await Promise.all(
+      images.map(async (img) => {
+        try {
+          if (!img.complete) await img.decode();
+        } catch {
+          // Ignore decode failures and let html2canvas handle fallbacks.
+        }
+      }),
+    );
+  };
 
   const fetchStudents = async () => {
     setIsLoading(true);
@@ -130,7 +157,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       (data || []).forEach((record: any) => {
         const deviceInfo = record.device_info as any;
         const metadata = deviceInfo?.metadata;
-        const empKey = (metadata?.employee_id || metadata?.roll_number || deviceInfo?.employee_id || '').toString().trim();
+        const empKey = pickIdentityKey(metadata?.employee_id, metadata?.roll_number, deviceInfo?.employee_id);
         if (record.user_id && empKey) employeeToUserId.set(empKey, record.user_id);
       });
 
@@ -143,10 +170,10 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         const resolvedName = metadata?.name || (record as any).student_name || '';
 
         if (resolvedName && resolvedName !== 'Unknown') {
-          const empKey = (metadata?.employee_id || metadata?.roll_number || deviceInfo?.employee_id || '').toString().trim();
-          const studentKey = ((record as any).student_id || '').toString().trim();
+          const empKey = pickIdentityKey(metadata?.employee_id, metadata?.roll_number, deviceInfo?.employee_id);
+          const studentKey = pickIdentityKey((record as any).student_id);
           const canonicalUserId = record.user_id || (empKey ? employeeToUserId.get(empKey) : null);
-          const userId = studentKey || empKey || canonicalUserId || record.id;
+          const userId = pickIdentityKey(studentKey, empKey, canonicalUserId, record.id);
           if (!uniqueStudents.has(userId)) {
             const imageCandidate = pickPreferredPhotoCandidate(
               canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
@@ -159,8 +186,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
             uniqueStudents.set(userId, {
               id: userId,
               name: resolvedName,
-              employee_id: metadata.employee_id || studentKey || 'N/A',
-              roll_number: metadata.roll_number || metadata.employee_id || studentKey || 'N/A',
+              employee_id: metadata.employee_id || studentKey || empKey || 'N/A',
+              roll_number: metadata.roll_number || metadata.employee_id || studentKey || empKey || 'N/A',
               category: record.category || 'General',
               blood_group: metadata.blood_group || '—',
               parent_phone: metadata.parent_phone || '—',
@@ -179,9 +206,9 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         const descriptorName = (descriptor?.label || '').toString().trim();
         if (!descriptorName || descriptorName === 'Unknown' || descriptorName === 'User') return;
 
-        const descriptorUserId = (descriptor?.user_id || '').toString().trim();
-        const descriptorStudentId = (descriptor?.student_id || '').toString().trim();
-        const key = descriptorUserId || descriptorStudentId || descriptor.id;
+        const descriptorUserId = pickIdentityKey(descriptor?.user_id);
+        const descriptorStudentId = pickIdentityKey(descriptor?.student_id);
+        const key = pickIdentityKey(descriptorUserId, descriptorStudentId, descriptor.id);
         if (!key || uniqueStudents.has(key)) return;
 
         const imageCandidate = pickPreferredPhotoCandidate(
@@ -213,7 +240,13 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         })),
       );
 
-      setStudents(resolvedStudents);
+      const sortedStudents = resolvedStudents.sort((a, b) => {
+        const nameCompare = a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+        if (nameCompare !== 0) return nameCompare;
+        return String(a.employee_id || '').localeCompare(String(b.employee_id || ''), undefined, { sensitivity: 'base' });
+      });
+
+      setStudents(sortedStudents);
     } catch (error) {
       console.error('Error fetching students:', error);
       toast({ title: 'Error', description: 'Failed to fetch student data', variant: 'destructive' });
@@ -223,7 +256,35 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
   };
 
   React.useEffect(() => {
-    if (!propStudents) fetchStudents();
+    if (propStudents) {
+      setStudents(propStudents);
+      return;
+    }
+    fetchStudents();
+  }, [propStudents]);
+
+  React.useEffect(() => {
+    if (propStudents) return;
+
+    const queueRefresh = () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = window.setTimeout(() => {
+        fetchStudents();
+        refreshTimerRef.current = null;
+      }, 300);
+    };
+
+    const channel = supabase
+      .channel('idcard-generator-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_records' }, queueRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'face_descriptors' }, queueRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, queueRefresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimerRef.current) window.clearTimeout(refreshTimerRef.current);
+      supabase.removeChannel(channel);
+    };
   }, [propStudents]);
 
   const toggleSelect = (id: string) => {
@@ -369,7 +430,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         ">
           <div style="
             background: #ffffff; border: 2px solid #e2e8f0; border-radius: 8px;
-            padding: 6px; width: 72px; height: 72px;
+            padding: 7px; width: 92px; height: 92px;
           ">
             <img src="data:image/svg+xml;base64,${qrBase64}" style="width: 100%; height: 100%;" />
           </div>
@@ -419,7 +480,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     
     await new Promise<void>((resolve) => {
       qrRoot.render(
-        <QRCodeSVG value={qrData} size={72} level="M" bgColor="white" fgColor="#1e3a5f" />
+        <QRCodeSVG value={qrData} size={92} level="M" bgColor="white" fgColor="#1e3a5f" />
       );
       setTimeout(resolve, 100);
     });
@@ -439,13 +500,15 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     container.innerHTML = buildCardHTML(student, qrBase64, logoSrc);
     document.body.appendChild(container);
 
-    await new Promise(resolve => setTimeout(resolve, 200));
+    await new Promise(resolve => setTimeout(resolve, 220));
+    await waitForEmbeddedImages(container);
 
     const canvas = await html2canvas(container.firstElementChild as HTMLElement, {
       scale: 3,
       useCORS: true,
-      allowTaint: true,
-      backgroundColor: null
+      allowTaint: false,
+      backgroundColor: '#ffffff',
+      logging: false,
     });
 
     document.body.removeChild(container);
@@ -821,7 +884,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                             name: previewStudent.name,
                             employee_id: previewStudent.employee_id
                           })}
-                          size={56}
+                          size={82}
                           fgColor="#1e3a5f"
                         />
                       </div>
