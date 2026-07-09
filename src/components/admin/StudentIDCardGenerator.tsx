@@ -472,8 +472,12 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     const qrData = JSON.stringify({
       type: 'student_id',
       id: student.id,
+      user_id: student.id,
+      student_id: student.employee_id,
       name: student.name,
-      employee_id: student.employee_id
+      employee_id: student.employee_id,
+      category: student.category,
+      version: 2,
     });
 
     // Render QR code
