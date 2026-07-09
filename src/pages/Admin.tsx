@@ -28,7 +28,6 @@ import AdminInbox from '@/components/admin/AdminInbox';
 import AdminTutorial from '@/components/admin/AdminTutorial';
 import StudentFaceSamplesManager from '@/components/admin/StudentFaceSamplesManager';
 import FaceSamplesDiagnosticsPanel from '@/components/admin/FaceSamplesDiagnosticsPanel';
-import LaunchReadinessChecklist from '@/components/admin/LaunchReadinessChecklist';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -316,7 +315,6 @@ const Admin = () => {
       case 'dashboard':
         return (
           <TabPanel>
-            <LaunchReadinessChecklist />
             <PrincipalDashboard />
           </TabPanel>
         );
