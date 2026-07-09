@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useToast } from '@/components/ui/use-toast';
+import { useSearchParams } from 'react-router-dom';
 import PageLayout from '@/components/layouts/PageLayout';
 import PageTransition from '@/components/PageTransition';
 import AttendanceInstructions from '@/components/attendance/AttendanceInstructions';
@@ -28,6 +29,7 @@ const AttendanceLoadingSkeleton = ({ isMobile }: { isMobile: boolean }) => (
 );
 
 const Attendance = () => {
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('single');
   const [attendanceMethod, setAttendanceMethod] = useState<'face' | 'qr'>('face');
   const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -40,6 +42,14 @@ const Attendance = () => {
     const timer = window.setTimeout(() => setIsInitialLoading(false), 520);
     return () => window.clearTimeout(timer);
   }, []);
+
+  const isQRKioskMode = searchParams.get('mode') === 'qr' && searchParams.get('autostart') === '1';
+
+  useEffect(() => {
+    if (!isQRKioskMode) return;
+    setActiveTab('single');
+    setAttendanceMethod('qr');
+  }, [isQRKioskMode]);
 
   const tabConfig = [
     { value: 'single', label: 'AI Scanner', shortLabel: 'Scan', icon: Scan },
@@ -250,7 +260,7 @@ const Attendance = () => {
                           </motion.div>
                         ) : (
                           <motion.div key="qr" initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}>
-                            <QRCodeScanner />
+                            <QRCodeScanner autoStart={isQRKioskMode} hideManualControls={isQRKioskMode} />
                           </motion.div>
                         )}
                       </AnimatePresence>
