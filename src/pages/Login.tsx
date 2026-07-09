@@ -70,6 +70,13 @@ const Login = () => {
   const queryRedirect = new URLSearchParams(location.search).get('redirectTo');
   const storedRedirect = sessionStorage.getItem('auth_redirect_to');
   const from = queryRedirect || (location.state as { from?: string } | null)?.from || storedRedirect || '/attendance';
+
+  useEffect(() => {
+    if (!queryRedirect) return;
+    if (queryRedirect.startsWith('/') && !queryRedirect.startsWith('//')) {
+      sessionStorage.setItem('auth_redirect_to', queryRedirect);
+    }
+  }, [queryRedirect]);
   
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {

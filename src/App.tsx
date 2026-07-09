@@ -25,6 +25,7 @@ const Unsubscribe = lazy(() => import('./pages/Unsubscribe'));
 const DataBackup = lazy(() => import('./pages/DataBackup'));
 const FaceModelValidator = lazy(() => import('./pages/FaceModelValidator'));
 const TeacherPortal = lazy(() => import('./pages/TeacherPortal'));
+const OAuthConsent = lazy(() => import('./pages/OAuthConsent'));
 
 import { AttendanceProvider } from './contexts/AttendanceContext';
 import { AnimatePresence } from 'framer-motion';
@@ -218,6 +219,7 @@ function AnimatedRoutes() {
         } />
         <Route path="/parent" element={<ParentPortal />} />
         <Route path="/unsubscribe" element={<Unsubscribe />} />
+        <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
         <Route path="/data" element={
           <ProtectedRoute requireRoles={["admin"]}>
             <DataBackup />

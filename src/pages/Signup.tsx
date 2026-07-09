@@ -24,6 +24,13 @@ const Signup = () => {
   const from = queryRedirect || (location.state as { from?: string } | null)?.from || storedRedirect || '/attendance';
 
   useEffect(() => {
+    if (!queryRedirect) return;
+    if (queryRedirect.startsWith('/') && !queryRedirect.startsWith('//')) {
+      sessionStorage.setItem('auth_redirect_to', queryRedirect);
+    }
+  }, [queryRedirect]);
+
+  useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session) {
         sessionStorage.removeItem('auth_redirect_to');
@@ -78,7 +85,7 @@ const Signup = () => {
     try {
       sessionStorage.setItem('auth_redirect_to', from);
       const result = await lovable.auth.signInWithOAuth('google', {
-        redirect_uri: `${window.location.origin}/signup?redirectTo=${encodeURIComponent(from)}`,
+        redirect_uri: `${window.location.origin}/login?redirectTo=${encodeURIComponent(from)}`,
       });
       if (result?.error) throw result.error;
     } catch (error: any) {
