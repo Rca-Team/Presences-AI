@@ -1,5 +1,6 @@
 import { supabase } from '@/integrations/supabase/client';
 import { backgroundPushService } from '@/services/BackgroundPushService';
+import { pushNotificationService } from '@/services/PushNotificationService';
 /**
  * Automatically sends a notification to the parent when attendance is marked.
  * This is called from the recognition service after successful attendance recording.
@@ -24,6 +25,11 @@ export const sendAutoParentNotification = async (
 
     if (error) {
       console.error('Error calling auto-parent-notification function:', error);
+      // Keep local operator feedback even if remote channels fail
+      pushNotificationService
+        .sendAttendanceNotification(studentName, status, 'Attendance', new Date())
+        .catch(() => undefined);
+
       return { 
         success: false, 
         message: `Failed to send notification: ${error.message}` 
@@ -36,6 +42,11 @@ export const sendAutoParentNotification = async (
     backgroundPushService.sendAttendanceAlert(
       studentId, studentName, status, 'School'
     ).catch(err => console.error('Background push failed:', err));
+
+    // Instant local app push for the active operator session
+    pushNotificationService
+      .sendAttendanceNotification(studentName, status, 'Attendance', new Date())
+      .catch(() => undefined);
 
     return { 
       success: data?.success || false, 

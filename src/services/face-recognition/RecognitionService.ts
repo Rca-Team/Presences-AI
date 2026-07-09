@@ -408,6 +408,8 @@ export async function recordAttendance(
   capturedImageDataUrl?: string,
   captureMode: 'ai-scan' | 'qr-scan' | 'gate-mode' = 'ai-scan'
 ): Promise<any> {
+  const sourceHint = deviceInfo?.source || deviceInfo?.metadata?.source;
+  const shouldAutoNotifyParent = sourceHint !== 'qr-scanner';
   const MIN_ATTENDANCE_CONFIDENCE = 0.65;
   const isManual =
     Boolean(deviceInfo?.metadata?.manual_confirmation) ||
@@ -543,15 +545,17 @@ export async function recordAttendance(
     }
   }
 
-  // Non-blocking parent notification
-  import('@/services/notification/AutoNotificationService')
-    .then(({ sendAutoParentNotification }) => {
-      const studentName = fullDeviceInfo?.metadata?.name || 'Student';
-      const photoUrl    = uploadedImageUrl || deviceInfo?.metadata?.firebase_image_url;
-      sendAutoParentNotification(userId, studentName, adjustedStatus as 'present' | 'late' | 'absent', photoUrl)
-        .catch(e => console.error('Auto-notification error:', e));
-    })
-    .catch(e => console.error('Notification module load error:', e));
+  if (shouldAutoNotifyParent) {
+    // Non-blocking parent notification
+    import('@/services/notification/AutoNotificationService')
+      .then(({ sendAutoParentNotification }) => {
+        const studentName = fullDeviceInfo?.metadata?.name || 'Student';
+        const photoUrl    = uploadedImageUrl || deviceInfo?.metadata?.firebase_image_url;
+        sendAutoParentNotification(userId, studentName, adjustedStatus as 'present' | 'late' | 'absent', photoUrl)
+          .catch(e => console.error('Auto-notification error:', e));
+      })
+      .catch(e => console.error('Notification module load error:', e));
+  }
 
   return data;
 }

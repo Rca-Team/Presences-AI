@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { pushNotificationService } from '@/services/PushNotificationService';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -213,6 +214,12 @@ const AdminNotificationSender: React.FC<AdminNotificationSenderProps> = ({ avail
       }
 
       setSendStatus({ success: successCount, failed: failedCount });
+
+      if (successCount > 0) {
+        pushNotificationService.showLocalNotification('📣 Admin notifications sent', {
+          body: `${successCount} delivered${failedCount > 0 ? `, ${failedCount} failed` : ''}`,
+        }).catch(() => undefined);
+      }
       
       toast({
         title: successCount > 0 ? "Notifications Sent" : "Send Failed",

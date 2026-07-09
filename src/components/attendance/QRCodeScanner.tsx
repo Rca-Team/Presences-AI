@@ -7,7 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getAttendanceCutoffTime, isPastCutoffTime } from '@/services/attendance/AttendanceSettingsService';
 import { recordAttendance } from '@/services/face-recognition/RecognitionService';
-import { pushNotificationService } from '@/services/PushNotificationService';
+import { sendAutoParentNotification } from '@/services/notification/AutoNotificationService';
 import {
   QrCode,
   Camera,
@@ -139,6 +139,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         status,
         1,
         {
+          source: 'qr-scanner',
           type: 'qr_code',
           scanned_at: new Date().toISOString(),
           metadata: {
@@ -160,10 +161,8 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
       onScanComplete?.({ success: true, name: qrData.name, userId: qrData.id });
 
-      // Instant local app push notification for operator feedback
-      pushNotificationService
-        .sendAttendanceNotification(qrData.name, status, qrData.category || 'Unknown', new Date())
-        .catch(() => undefined);
+      // Parent channels + local/background push in one unified flow
+      sendAutoParentNotification(qrData.id, qrData.name, status).catch(() => undefined);
 
       // Reset after 3 seconds
       setTimeout(() => {
