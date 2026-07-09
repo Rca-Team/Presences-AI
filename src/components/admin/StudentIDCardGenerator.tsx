@@ -304,8 +304,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     
     return `
       <div style="
-        width: 350px;
-        height: 560px;
+        width: 420px;
+        height: 760px;
         border-radius: 16px;
         overflow: hidden;
         font-family: 'Segoe UI', 'Inter', sans-serif;
@@ -426,9 +426,9 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           ">
             <img src="data:image/svg+xml;base64,${qrBase64}" style="width: 100%; height: 100%;" />
           </div>
-          <div style="flex: 1; padding-left: 12px;">
+          <div style="flex: 1; padding-left: 12px; align-self: stretch; display: flex; flex-direction: column; justify-content: flex-end;">
             <div style="font-size: 9px; color: #94a3b8; margin-bottom: 3px;">Scan for verification</div>
-            <div style="text-align: center; padding-top: 14px; border-top: 1px dashed #cbd5e1; margin-top: 6px;">
+            <div style="text-align: center; padding-top: 16px; border-top: 1px dashed #cbd5e1; margin-top: 6px;">
               <div style="font-size: 9px; font-weight: 700; color: #1e3a5f;">Principal</div>
               <div style="font-size: 8px; color: #94a3b8;">Signature & Seal</div>
             </div>
@@ -442,7 +442,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
         <!-- Bottom Band -->
         <div style="
-          margin-top: auto; position: absolute; bottom: 0; left: 0; right: 0;
+          margin-top: 6px;
           background: linear-gradient(135deg, #1e3a5f 0%, #0d2137 100%);
           padding: 7px 16px; text-align: center;
           font-size: 8px; color: #93c5fd; letter-spacing: 0.4px;
@@ -545,10 +545,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
   };
 
   /**
-   * Build a multi-page A4 PDF that lays out ID cards at the standard
-   * ISO/IEC 7810 ID-1 portrait size (54 mm × 85.6 mm). On a 210 × 297 mm
-   * A4 sheet with 8 mm margin and 4 mm gutter we fit 3 cols × 3 rows = 9
-   * cards per page — saves paper and prints at real-world card size.
+   * Build a multi-page A4 PDF with one large portrait card per page so
+   * printed/exported cards visually match the on-screen preview design.
    */
   const buildPDFFromStudents = async (
     list: StudentData[],
@@ -561,41 +559,29 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     setIsGenerating(true);
     try {
       // A4 portrait in mm
-      const PAGE_W = 210, PAGE_H = 297;
-      const MARGIN = 8, GUTTER = 4;
-      const CARD_W = 54, CARD_H = 85.6; // CR80 portrait
-      const COLS = 3;
-      const ROWS = 3;
-      const PER_PAGE = COLS * ROWS;
-      const GRID_W = COLS * CARD_W + (COLS - 1) * GUTTER;
-      const GRID_H = ROWS * CARD_H + (ROWS - 1) * GUTTER;
-      const START_X = Math.max(MARGIN, (PAGE_W - GRID_W) / 2);
-      const START_Y = Math.max(MARGIN, (PAGE_H - GRID_H) / 2);
+      const PAGE_W = 210;
+      const PAGE_H = 297;
+      const PAGE_MARGIN = 12;
+
+      // Match exported card aspect ratio to buildCardHTML dimensions
+      const CARD_SOURCE_W = 420;
+      const CARD_SOURCE_H = 760;
+      const fitScale = Math.min(
+        (PAGE_W - PAGE_MARGIN * 2) / CARD_SOURCE_W,
+        (PAGE_H - PAGE_MARGIN * 2) / CARD_SOURCE_H
+      );
+      const CARD_W = CARD_SOURCE_W * fitScale;
+      const CARD_H = CARD_SOURCE_H * fitScale;
+      const START_X = (PAGE_W - CARD_W) / 2;
+      const START_Y = (PAGE_H - CARD_H) / 2;
 
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
       for (let i = 0; i < list.length; i++) {
-        const idxOnPage = i % PER_PAGE;
-        if (i > 0 && idxOnPage === 0) pdf.addPage();
+        if (i > 0) pdf.addPage();
 
         const dataUrl = await generateIDCard(list[i]);
-
-        const col = idxOnPage % COLS;
-        const row = Math.floor(idxOnPage / COLS);
-        const x = START_X + col * (CARD_W + GUTTER);
-        const y = START_Y + row * (CARD_H + GUTTER);
-
-        pdf.addImage(dataUrl, 'PNG', x, y, CARD_W, CARD_H, undefined, 'FAST');
-
-        // Light cut guides at corners
-        pdf.setDrawColor(180);
-        pdf.setLineWidth(0.1);
-        const t = 1.2; // tick length, outside card edges only
-        pdf.line(x - t, y, x, y);            pdf.line(x, y - t, x, y);
-        pdf.line(x + CARD_W, y, x + CARD_W + t, y); pdf.line(x + CARD_W, y - t, x + CARD_W, y);
-        pdf.line(x - t, y + CARD_H, x, y + CARD_H); pdf.line(x, y + CARD_H, x, y + CARD_H + t);
-        pdf.line(x + CARD_W, y + CARD_H, x + CARD_W + t, y + CARD_H);
-        pdf.line(x + CARD_W, y + CARD_H, x + CARD_W, y + CARD_H + t);
+        pdf.addImage(dataUrl, 'PNG', START_X, START_Y, CARD_W, CARD_H, undefined, 'FAST');
       }
 
       if (opts.autoPrint) {
@@ -636,7 +622,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       toast({
         title: 'PDF Ready',
-        description: `${list.length} card(s) on ${Math.ceil(list.length / PER_PAGE)} A4 page(s)`,
+        description: `${list.length} card(s) on ${list.length} A4 page(s)`,
       });
     } catch (e) {
       console.error('PDF export error:', e);
@@ -711,7 +697,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                 <Button
                   onClick={() => exportPDF(false)}
                   disabled={isGenerating || students.length === 0}
-                  title="Download a print-ready A4 PDF with 9 cards per page at real ID-card size (54×85.6 mm)"
+                  title="Download A4 PDF with one full ID card per page, matching preview layout"
                 >
                   {isGenerating
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Building PDF…</>
@@ -725,7 +711,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                   variant="secondary"
                   onClick={() => exportPDF(true)}
                   disabled={isGenerating || students.length === 0}
-                  title="Open print dialog with the PDF (9 cards per A4 at real size)"
+                  title="Open print dialog with one full ID card per A4 page"
                 >
                   <Printer className="w-4 h-4 mr-2" />
                   Print
