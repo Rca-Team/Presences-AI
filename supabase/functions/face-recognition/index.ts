@@ -26,6 +26,21 @@ interface VisionCandidate {
   quality_score: number | null;
 }
 
+interface ModelTopMatch {
+  user_id: string;
+  confidence: number;
+}
+
+interface ModelRecognitionPayload {
+  recognized?: boolean;
+  matched_user_id?: string | null;
+  matched_student_name?: string | null;
+  confidence?: number;
+  quality_score?: number;
+  reason?: string;
+  top_matches?: ModelTopMatch[];
+}
+
 function parseJsonFromModel(content: string) {
   const cleaned = content.trim();
   const fenced = cleaned.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -55,7 +70,7 @@ async function runGeminiVisionRecognition(
     .eq('is_active', true)
     .not('image_url', 'is', null)
     .order('quality_score', { ascending: false, nullsFirst: false })
-    .limit(24);
+    .limit(30);
 
   if (error) {
     throw new Error(`Failed loading face candidates: ${error.message}`);
@@ -65,11 +80,28 @@ async function runGeminiVisionRecognition(
     Boolean(candidate.image_url && (candidate.user_id || candidate.student_id)),
   );
 
-  if (!validCandidates.length) {
+  const candidateSubset = validCandidates.slice(0, 8);
+
+  if (!candidateSubset.length) {
     return { recognized: false, confidence: 0, reason: 'no_registered_candidates', qualityScore: 0 };
   }
 
-  const candidateLines = validCandidates
+  const candidateMap = new Map(
+    candidateSubset.map((candidate, idx) => {
+      const id = candidate.user_id || candidate.student_id || `candidate-${idx + 1}`;
+      return [
+        id,
+        {
+          id,
+          name: candidate.student_name || null,
+          imageUrl: candidate.image_url,
+          qualityScore: Number(candidate.quality_score ?? 0),
+        },
+      ] as const;
+    }),
+  );
+
+  const candidateLines = candidateSubset
     .map((candidate, idx) => {
       const id = candidate.user_id || candidate.student_id || `candidate-${idx + 1}`;
       return `${idx + 1}. id=${id}; name=${candidate.student_name || 'Unknown'}; quality=${candidate.quality_score ?? 0}; image=${candidate.image_url}`;
@@ -80,35 +112,59 @@ async function runGeminiVisionRecognition(
     ? `Target face bounding box in source frame (x,y,width,height): ${payload.faceBox.x}, ${payload.faceBox.y}, ${payload.faceBox.width}, ${payload.faceBox.height}.`
     : 'Target face is the most centered and prominent face in the frame.';
 
+  const modelPromptContent: Array<Record<string, unknown>> = [
+    {
+      type: 'text',
+      text:
+        `Gate face verification task. ${faceBoxPrompt}\n` +
+        `Use strict matching: reject uncertain, low-quality, side profile, blur, occlusion, or look-alike ambiguity.\n` +
+        `Minimum confidence: ${minimumConfidence}. Minimum quality: ${minimumQuality}.\n` +
+        `Candidate shortlist (metadata):\n${candidateLines}`,
+    },
+    {
+      type: 'text',
+      text: 'TARGET_FRAME',
+    },
+    {
+      type: 'image_url',
+      image_url: { url: payload.image },
+    },
+  ];
+
+  candidateSubset.forEach((candidate, idx) => {
+    const candidateId = candidate.user_id || candidate.student_id || `candidate-${idx + 1}`;
+    modelPromptContent.push(
+      {
+        type: 'text',
+        text: `CANDIDATE_${idx + 1} id=${candidateId}; name=${candidate.student_name || 'Unknown'}; quality=${candidate.quality_score ?? 0}`,
+      },
+      {
+        type: 'image_url',
+        image_url: { url: candidate.image_url },
+      },
+    );
+  });
+
   let content = '';
   try {
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${lovableApiKey}`,
+        'Lovable-API-Key': lovableApiKey,
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
+        model: 'google/gemini-2.5-flash',
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
             content:
-              'You are a strict school gate face verifier. Compare the target face from the frame with candidate reference photos. Reject if uncertain. Return ONLY JSON with keys: recognized(boolean), matched_user_id(string|null), matched_student_name(string|null), confidence(number 0..1), quality_score(number 0..1), reason(string).',
+              'You are a strict school gate face verifier. Compare TARGET_FRAME with each CANDIDATE image. Reject when uncertain. Return ONLY JSON with keys: recognized(boolean), matched_user_id(string|null), matched_student_name(string|null), confidence(number 0..1), quality_score(number 0..1), reason(string), top_matches(array of up to 3 objects with user_id and confidence sorted descending).',
           },
           {
             role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: `Perform face identity verification for gate attendance. ${faceBoxPrompt}\nMinimum confidence: ${minimumConfidence}. Minimum quality: ${minimumQuality}.\nCandidates:\n${candidateLines}`,
-              },
-              {
-                type: 'image_url',
-                image_url: { url: payload.image },
-              },
-            ],
+            content: modelPromptContent,
           },
         ],
       }),
@@ -138,19 +194,48 @@ async function runGeminiVisionRecognition(
     return { recognized: false, confidence: 0, reason: 'empty_model_response', qualityScore: 0 };
   }
 
-  const parsed = parseJsonFromModel(content);
-  const confidence = Number(parsed?.confidence ?? 0);
-  const qualityScore = Number(parsed?.quality_score ?? parsed?.qualityScore ?? 0);
-  const matchedUserId = (parsed?.matched_user_id ?? parsed?.user_id ?? null) as string | null;
+  const parsed = parseJsonFromModel(content) as ModelRecognitionPayload;
+  const qualityScore = Number(parsed?.quality_score ?? 0);
+  const topMatches = (Array.isArray(parsed?.top_matches) ? parsed.top_matches : [])
+    .map((match) => ({
+      user_id: String(match?.user_id || ''),
+      confidence: Number(match?.confidence ?? 0),
+    }))
+    .filter((match) => match.user_id && Number.isFinite(match.confidence))
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 3);
 
-  if (!parsed?.recognized || confidence < minimumConfidence || qualityScore < minimumQuality || !matchedUserId) {
+  const top1 = topMatches[0] ?? null;
+  const top2 = topMatches[1] ?? null;
+  const matchedUserId = (parsed?.matched_user_id || top1?.user_id || null) as string | null;
+  const confidence = Number(parsed?.confidence ?? top1?.confidence ?? 0);
+  const confidenceMargin = top1 && top2 ? top1.confidence - top2.confidence : 1;
+  const matchedCandidate = matchedUserId ? candidateMap.get(matchedUserId) : null;
+
+  if (!matchedUserId || !matchedCandidate) {
     return {
       recognized: false,
       confidence,
       qualityScore,
-      reason: parsed?.reason || 'below_threshold',
+      reason: parsed?.reason || 'invalid_candidate_match',
       userId: matchedUserId,
       studentName: parsed?.matched_student_name || null,
+    };
+  }
+
+  if (
+    !parsed?.recognized ||
+    confidence < minimumConfidence ||
+    qualityScore < minimumQuality ||
+    confidenceMargin < 0.12
+  ) {
+    return {
+      recognized: false,
+      confidence,
+      qualityScore,
+      reason: parsed?.reason || (confidenceMargin < 0.12 ? 'ambiguous_top_match' : 'below_threshold'),
+      userId: matchedUserId,
+      studentName: parsed?.matched_student_name || matchedCandidate.name,
     };
   }
 
@@ -160,7 +245,7 @@ async function runGeminiVisionRecognition(
     qualityScore,
     reason: parsed?.reason || 'matched',
     userId: matchedUserId,
-    studentName: parsed?.matched_student_name || null,
+    studentName: parsed?.matched_student_name || matchedCandidate.name,
     employeeId: matchedUserId,
   };
 }
