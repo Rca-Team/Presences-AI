@@ -120,7 +120,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       const [samplesRes, allAttRes, profileRes] = await Promise.all([
         supabase
           .from('face_descriptors')
-          .select('id, user_id, label, image_url, created_at')
+          .select('id, user_id, student_id, label, image_url, created_at')
           .order('created_at', { ascending: false }),
         supabase
           .from('attendance_records')
@@ -216,18 +216,27 @@ const StudentFaceSamplesManager: React.FC = () => {
         });
       });
 
-      // Push trained-slot descriptors only for students that still exist in
-      // the directory (i.e., still have attendance/registration records).
-      // Orphan descriptors from deleted students are skipped so they don't
-      // appear here as ghost entries.
+      // Push trained-slot descriptors. Keep existing attendance-linked students,
+      // and also include descriptor-only students so all registered faces appear.
       (samplesRes.data || []).forEach((raw: any) => {
-        const uid = raw.user_id as string | null;
-        if (!uid) return;
-        const key = userIdToKey.get(uid);
-        if (!key || !grouped.has(key)) return; // student was deleted
+        const uid = (raw.user_id || '').toString().trim();
+        const studentId = (raw.student_id || '').toString().trim();
+        const label = (raw.label || '').toString().trim();
+        let key = uid ? userIdToKey.get(uid) : undefined;
+        if (!key) key = uid || studentId || raw.id;
+        if (!grouped.has(key)) {
+          const profileName = uid ? profileMap.get(uid) : '';
+          grouped.set(key, {
+            userId: uid || key,
+            name: label || profileName || studentId || 'Student',
+            employeeId: studentId || key,
+            samples: [],
+          });
+          if (uid) userIdToKey.set(uid, key);
+        }
         grouped.get(key)!.samples.push({
           id: raw.id,
-          user_id: uid,
+          user_id: uid || key,
           label: raw.label,
           image_url: raw.image_url,
           created_at: raw.created_at,
