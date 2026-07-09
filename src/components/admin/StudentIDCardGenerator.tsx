@@ -410,14 +410,6 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b; vertical-align: top;">Address</td>
                 <td style="padding: 5px 0; font-size: 11px; font-weight: 600; color: #1e3a5f; line-height: 1.4;">: ${student.address}</td>
               </tr>` : ''}
-              <tr>
-                <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Issued On</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
-              </tr>
-              <tr>
-                <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Valid Till</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #dc2626;">: 31 Mar ${ACADEMIC_YEAR.split('–')[1]}</td>
-              </tr>
             </table>
           </div>
         </div>
@@ -430,7 +422,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         ">
           <div style="
             background: #ffffff; border: 2px solid #e2e8f0; border-radius: 8px;
-            padding: 7px; width: 92px; height: 92px;
+            padding: 6px; width: 96px; height: 96px;
           ">
             <img src="data:image/svg+xml;base64,${qrBase64}" style="width: 100%; height: 100%;" />
           </div>
@@ -480,7 +472,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     
     await new Promise<void>((resolve) => {
       qrRoot.render(
-        <QRCodeSVG value={qrData} size={92} level="M" bgColor="white" fgColor="#1e3a5f" />
+        <QRCodeSVG value={qrData} size={96} level="M" bgColor="white" fgColor="#1e3a5f" />
       );
       setTimeout(resolve, 100);
     });
@@ -889,10 +881,11 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                         ['Parent/Guardian', previewStudent.parent_name],
                         ['Contact No.', previewStudent.parent_phone],
                         ['Transport', previewStudent.transport_mode],
+                        ...(previewStudent.address && previewStudent.address !== '—' ? [['Address', previewStudent.address]] : []),
                       ].map(([label, value], i) => (
                         <div key={i} className="flex py-[4px]">
-                          <span className="w-[40%] text-slate-500 text-[10px] sm:text-[11px]">{label}</span>
-                          <span className={`font-semibold truncate ${label === 'Blood Group' ? 'text-red-600' : 'text-[#1e3a5f]'}`}>
+                          <span className={`text-slate-500 text-[10px] sm:text-[11px] ${label === 'Address' ? 'w-[40%] pt-[1px]' : 'w-[40%]'}`}>{label}</span>
+                          <span className={`font-semibold break-words leading-snug ${label === 'Blood Group' ? 'text-red-600' : 'text-[#1e3a5f]'}`}>
                             : {value}
                           </span>
                         </div>
@@ -911,13 +904,13 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                             name: previewStudent.name,
                             employee_id: previewStudent.employee_id
                           })}
-                          size={82}
+                          size={96}
                           fgColor="#1e3a5f"
                         />
                       </div>
-                      <p className="text-[8px] text-slate-400 mt-1">Scan to verify</p>
+                      <p className="text-[8px] text-slate-400 mt-1">Scan for verification</p>
                     </div>
-                    <div className="flex-1 text-center border-t border-dashed border-slate-300 pt-1">
+                    <div className="flex-1 text-center border-t border-dashed border-slate-300 pt-3">
                       <p className="text-[10px] font-bold text-[#1e3a5f]">Principal</p>
                       <p className="text-[8px] text-slate-400">Signature & Seal</p>
                     </div>
