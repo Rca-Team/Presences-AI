@@ -36,16 +36,41 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
   const { toast } = useToast();
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const scanIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const isLoopActiveRef = useRef(false);
+  const lastFrameAtRef = useRef(0);
+  const inFlightDecodeRef = useRef(false);
+  const recentScanRef = useRef<Map<string, number>>(new Map());
+  const barcodeDetectorRef = useRef<any>(null);
+
+  const SCAN_FRAME_INTERVAL_MS = 90;
+  const DUPLICATE_SCAN_COOLDOWN_MS = 10_000;
   
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{ success: boolean; name?: string } | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [lastScannedId, setLastScannedId] = useState<string | null>(null);
 
+  const getScanIdentity = (qrData: QRData) =>
+    String(qrData.id || qrData.employee_id || qrData.name || '').trim().toLowerCase();
+
+  const isDuplicateScan = (identity: string) => {
+    const now = Date.now();
+    const lastSeen = recentScanRef.current.get(identity);
+    if (lastSeen && now - lastSeen < DUPLICATE_SCAN_COOLDOWN_MS) return true;
+    recentScanRef.current.set(identity, now);
+
+    for (const [key, timestamp] of recentScanRef.current.entries()) {
+      if (now - timestamp > DUPLICATE_SCAN_COOLDOWN_MS * 2) {
+        recentScanRef.current.delete(key);
+      }
+    }
+    return false;
+  };
+
   // Simple QR code detection using canvas
   const detectQRCode = useCallback(async () => {
-    if (!webcamRef.current || !canvasRef.current) return;
+    if (inFlightDecodeRef.current || !webcamRef.current || !canvasRef.current) return;
 
     const video = webcamRef.current.video;
     if (!video || video.readyState !== 4) return;
@@ -58,11 +83,14 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
     canvas.height = video.videoHeight;
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+    inFlightDecodeRef.current = true;
     try {
       // Use BarcodeDetector API if available (modern browsers)
       if ('BarcodeDetector' in window) {
-        const barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-        const barcodes = await barcodeDetector.detect(canvas);
+        if (!barcodeDetectorRef.current) {
+          barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+        }
+        const barcodes = await barcodeDetectorRef.current.detect(canvas);
         
         if (barcodes.length > 0) {
           const qrData = barcodes[0].rawValue;
@@ -71,14 +99,19 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
       }
     } catch (err) {
       // Silently fail for detection errors
+    } finally {
+      inFlightDecodeRef.current = false;
     }
   }, []);
 
   const processQRCode = async (qrDataString: string) => {
     try {
       const qrData: QRData = JSON.parse(qrDataString);
+      const identity = getScanIdentity(qrData);
+      if (!identity) return;
       
-      // Prevent duplicate scans within 5 seconds
+      // Prevent duplicate scans within cooldown window (spam protection)
+      if (isDuplicateScan(identity)) return;
       if (qrData.id === lastScannedId) return;
       
       setLastScannedId(qrData.id);
@@ -144,23 +177,39 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
   const startScanning = () => {
     setIsScanning(true);
     setScanResult(null);
-    
-    // Start continuous scanning
-    scanIntervalRef.current = setInterval(detectQRCode, 200);
+
+    isLoopActiveRef.current = true;
+    inFlightDecodeRef.current = false;
+
+    const loop = async (timestamp: number) => {
+      if (!isLoopActiveRef.current) return;
+      if (timestamp - lastFrameAtRef.current >= SCAN_FRAME_INTERVAL_MS) {
+        lastFrameAtRef.current = timestamp;
+        await detectQRCode();
+      }
+      if (isLoopActiveRef.current) {
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(loop);
   };
 
   const stopScanning = () => {
     setIsScanning(false);
-    if (scanIntervalRef.current) {
-      clearInterval(scanIntervalRef.current);
-      scanIntervalRef.current = null;
+    isLoopActiveRef.current = false;
+    inFlightDecodeRef.current = false;
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
   };
 
   useEffect(() => {
     return () => {
-      if (scanIntervalRef.current) {
-        clearInterval(scanIntervalRef.current);
+      isLoopActiveRef.current = false;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
       }
     };
   }, []);
