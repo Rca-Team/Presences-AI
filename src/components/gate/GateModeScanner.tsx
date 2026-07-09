@@ -162,6 +162,7 @@ const GateModeScanner = ({
   const [blockedCount,     setBlockedCount]      = useState(0);
   const [avgLatencyMs,     setAvgLatencyMs]      = useState(0);
   const [autoZone,         setAutoZone]          = useState<DetectionBox | null>(null);
+  const [cameraRetryNonce, setCameraRetryNonce]  = useState(0);
 
   // Mutable refs — safe to access inside async callbacks without stale closure issues
   const processingRef       = useRef(false);
@@ -364,7 +365,7 @@ const GateModeScanner = ({
         (videoRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
       }
     };
-  }, [isActive, facingMode]);
+  }, [isActive, facingMode, cameraRetryNonce]);
 
   // ── Gemini Vision (cloud) ──────────────────────────────────────────────────
 
@@ -853,7 +854,11 @@ const GateModeScanner = ({
           <p className="text-destructive font-semibold">{cameraError}</p>
           <p className="text-sm text-muted-foreground">Gate mode requires camera access.</p>
           <button
-            onClick={() => { setCameraError(null); setIsLoading(true); }}
+            onClick={() => {
+              setCameraError(null);
+              setIsLoading(true);
+              setCameraRetryNonce((n) => n + 1);
+            }}
             className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold"
           >
             Retry
