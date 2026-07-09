@@ -166,12 +166,16 @@ const GateMode = () => {
       const start = new Date(); start.setHours(0, 0, 0, 0);
       const end   = new Date(start); end.setDate(end.getDate() + 1);
 
-      const [registeredRes, attRes] = await Promise.all([
+      const [registeredRes, descriptorRes, attRes] = await Promise.all([
         // Canonical registered student source
         supabase
           .from('attendance_records')
           .select('user_id, student_id, device_info')
           .eq('status', 'registered'),
+        // Descriptor-only registrations (fallback when attendance registration row is missing)
+        supabase
+          .from('face_descriptors')
+          .select('user_id, student_id'),
         // Attendance today via gate-mode
         supabase.from('attendance_records')
           .select('user_id, status').eq('source', 'gate-mode')
@@ -191,9 +195,25 @@ const GateMode = () => {
 
       const registeredIds = new Set(
         registeredRows
-          .map((row: any) => row.user_id || row.student_id)
+          .map((row: any) => {
+            const metadata = (row.device_info as any)?.metadata || {};
+            return (
+              row.user_id ||
+              row.student_id ||
+              metadata.employee_id ||
+              metadata.roll_number ||
+              (row.device_info as any)?.employee_id ||
+              row.id
+            );
+          })
           .filter(Boolean),
       );
+
+      (descriptorRes.data || []).forEach((row: any) => {
+        const id = row.user_id || row.student_id;
+        if (id) registeredIds.add(id);
+      });
+
       const rows    = attRes.data || [];
       const present = new Set(rows.map(r => r.user_id).filter(Boolean));
       const late    = new Set(rows.filter(r => r.status === 'late').map(r => r.user_id).filter(Boolean));

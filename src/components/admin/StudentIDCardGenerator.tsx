@@ -90,7 +90,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           .order('created_at', { ascending: true }),
         supabase
           .from('face_descriptors')
-          .select('user_id, student_id, image_url, created_at')
+          .select('id, user_id, student_id, label, image_url, created_at')
           .not('image_url', 'is', null)
           .order('created_at', { ascending: true }),
         supabase
@@ -171,6 +171,39 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
             });
           }
         }
+      });
+
+      // Include descriptor-only students (when registration exists in face_descriptors
+      // but attendance_records is missing/incomplete for that student).
+      (descriptorsRes.data || []).forEach((descriptor: any) => {
+        const descriptorName = (descriptor?.label || '').toString().trim();
+        if (!descriptorName || descriptorName === 'Unknown' || descriptorName === 'User') return;
+
+        const descriptorUserId = (descriptor?.user_id || '').toString().trim();
+        const descriptorStudentId = (descriptor?.student_id || '').toString().trim();
+        const key = descriptorUserId || descriptorStudentId || descriptor.id;
+        if (!key || uniqueStudents.has(key)) return;
+
+        const imageCandidate = pickPreferredPhotoCandidate(
+          descriptorUserId ? profileImageByUserId.get(descriptorUserId) : '',
+          descriptorUserId ? descriptorImageByUserId.get(descriptorUserId) : '',
+          descriptorStudentId ? descriptorImageByStudentKey.get(descriptorStudentId) : '',
+          descriptor?.image_url,
+        );
+
+        uniqueStudents.set(key, {
+          id: key,
+          name: descriptorName,
+          employee_id: descriptorStudentId || 'N/A',
+          roll_number: descriptorStudentId || 'N/A',
+          category: 'General',
+          blood_group: '—',
+          parent_phone: '—',
+          parent_name: '—',
+          transport_mode: '—',
+          avatar_url: imageCandidate,
+          address: '',
+        });
       });
 
       const resolvedStudents = await Promise.all(
