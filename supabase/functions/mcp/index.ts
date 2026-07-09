@@ -163,7 +163,7 @@ var projectRefFromUrl = (() => {
   const match = url.match(/^https:\/\/([^.]+)\.supabase\.co/i);
   return match?.[1] || null;
 })();
-var projectRef = define_import_meta_env_default.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? "project-ref-unset";
+var projectRef = define_import_meta_env_default.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? "eiahucigcvsnuvviajqt";
 var mcp_default = defineMcp({
   name: "presences-mcp",
   title: "Presences MCP",

@@ -9,7 +9,7 @@ const projectRefFromUrl = (() => {
   return match?.[1] || null;
 })();
 
-const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? 'project-ref-unset';
+const projectRef = import.meta.env.VITE_SUPABASE_PROJECT_ID ?? projectRefFromUrl ?? 'eiahucigcvsnuvviajqt';
 
 export default defineMcp({
   name: 'presences-mcp',
