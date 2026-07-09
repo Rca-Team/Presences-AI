@@ -166,9 +166,12 @@ const GateMode = () => {
       const start = new Date(); start.setHours(0, 0, 0, 0);
       const end   = new Date(start); end.setDate(end.getDate() + 1);
 
-      const [faceRes, attRes] = await Promise.all([
-        // Registered-face students — the only students the gate can scan
-        supabase.from('face_descriptors').select('user_id').eq('is_active', true).not('user_id', 'is', null),
+      const [registeredRes, attRes] = await Promise.all([
+        // Canonical registered student source
+        supabase
+          .from('attendance_records')
+          .select('user_id, student_id, device_info')
+          .eq('status', 'registered'),
         // Attendance today via gate-mode
         supabase.from('attendance_records')
           .select('user_id, status').eq('source', 'gate-mode')
@@ -176,7 +179,19 @@ const GateMode = () => {
           .gte('timestamp', start.toISOString()).lt('timestamp', end.toISOString()),
       ]);
 
-      const registeredIds = new Set((faceRes.data || []).map(r => r.user_id).filter(Boolean));
+      const registeredRows = (registeredRes.data || []).filter((row: any) => {
+        if (!className && !section) return true;
+        const metadata = (row.device_info as any)?.metadata || {};
+        const rowClass = metadata.class || null;
+        const rowSection = metadata.section || null;
+        return (!className || rowClass === className) && (!section || rowSection === section);
+      });
+
+      const registeredIds = new Set(
+        registeredRows
+          .map((row: any) => row.user_id || row.student_id)
+          .filter(Boolean),
+      );
       const rows    = attRes.data || [];
       const present = new Set(rows.map(r => r.user_id).filter(Boolean));
       const late    = new Set(rows.filter(r => r.status === 'late').map(r => r.user_id).filter(Boolean));
@@ -185,7 +200,7 @@ const GateMode = () => {
       setTotalPresentToday(present.size);
       setLateCount(late.size);
     } catch {}
-  }, []);
+  }, [className, section]);
 
   // ── Session persistence ────────────────────────────────────────────────────
   const loadSessionEntries = useCallback(async (sid: string) => {
