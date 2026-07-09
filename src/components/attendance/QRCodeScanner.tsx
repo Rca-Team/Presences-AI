@@ -7,7 +7,6 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getAttendanceCutoffTime, isPastCutoffTime } from '@/services/attendance/AttendanceSettingsService';
 import { recordAttendance } from '@/services/face-recognition/RecognitionService';
-import { pushNotificationService } from '@/services/PushNotificationService';
 import { sendAutoParentNotification } from '@/services/notification/AutoNotificationService';
 import {
   QrCode,
