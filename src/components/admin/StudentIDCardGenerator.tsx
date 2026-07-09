@@ -85,7 +85,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const [attendanceRes, descriptorsRes, profilesRes] = await Promise.all([
         supabase
           .from('attendance_records')
-          .select('id, user_id, device_info, category, image_url, created_at')
+          .select('id, user_id, student_id, student_name, device_info, category, image_url, created_at')
           .eq('status', 'registered')
           .order('created_at', { ascending: true }),
         supabase
@@ -140,24 +140,27 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         const deviceInfo = record.device_info as any;
         const metadata = deviceInfo?.metadata;
         
-        if (metadata?.name && metadata.name !== 'Unknown') {
+        const resolvedName = metadata?.name || (record as any).student_name || '';
+
+        if (resolvedName && resolvedName !== 'Unknown') {
           const empKey = (metadata?.employee_id || metadata?.roll_number || deviceInfo?.employee_id || '').toString().trim();
+          const studentKey = ((record as any).student_id || '').toString().trim();
           const canonicalUserId = record.user_id || (empKey ? employeeToUserId.get(empKey) : null);
-          const userId = canonicalUserId || empKey || record.id;
+          const userId = canonicalUserId || studentKey || empKey || record.id;
           if (!uniqueStudents.has(userId)) {
             const imageCandidate = pickPreferredPhotoCandidate(
               canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
               canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
-              empKey ? descriptorImageByStudentKey.get(empKey) : '',
+              studentKey ? descriptorImageByStudentKey.get(studentKey) : (empKey ? descriptorImageByStudentKey.get(empKey) : ''),
               record.image_url,
               metadata.firebase_image_url,
             );
 
             uniqueStudents.set(userId, {
               id: userId,
-              name: metadata.name,
-              employee_id: metadata.employee_id || 'N/A',
-              roll_number: metadata.roll_number || metadata.employee_id || 'N/A',
+              name: resolvedName,
+              employee_id: metadata.employee_id || studentKey || 'N/A',
+              roll_number: metadata.roll_number || metadata.employee_id || studentKey || 'N/A',
               category: record.category || 'General',
               blood_group: metadata.blood_group || '—',
               parent_phone: metadata.parent_phone || '—',
