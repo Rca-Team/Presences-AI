@@ -560,8 +560,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
   };
 
   /**
-   * Build a multi-page A4 PDF with one large portrait card per page so
-   * printed/exported cards visually match the on-screen preview design.
+   * Build a multi-page A4 PDF with multiple normal ID-size cards per page.
+   * Keeps the full card UI visible (no cropping) while avoiding one-card-per-A4 output.
    */
   const buildPDFFromStudents = async (
     list: StudentData[],
@@ -576,28 +576,45 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       // A4 portrait in mm
       const PAGE_W = 210;
       const PAGE_H = 297;
-      const PAGE_MARGIN = 12;
+      const PAGE_MARGIN = 10;
+      const CARD_GAP = 5;
 
-      // Match exported card aspect ratio to buildCardHTML dimensions
+      // Keep the same card artwork ratio and map it to a practical physical ID-card height.
+      // (Portrait orientation card; full content is scaled, not cropped.)
       const CARD_SOURCE_W = 420;
       const CARD_SOURCE_H = 760;
-      const fitScale = Math.min(
-        (PAGE_W - PAGE_MARGIN * 2) / CARD_SOURCE_W,
-        (PAGE_H - PAGE_MARGIN * 2) / CARD_SOURCE_H
-      );
-      const CARD_W = CARD_SOURCE_W * fitScale;
-      const CARD_H = CARD_SOURCE_H * fitScale;
-      const START_X = (PAGE_W - CARD_W) / 2;
-      const START_Y = (PAGE_H - CARD_H) / 2;
+      const CARD_ASPECT = CARD_SOURCE_W / CARD_SOURCE_H;
+      const TARGET_CARD_H = 86; // close to standard ID card physical height in mm
+      const CARD_H = TARGET_CARD_H;
+      const CARD_W = CARD_H * CARD_ASPECT;
+
+      const usableW = PAGE_W - PAGE_MARGIN * 2;
+      const usableH = PAGE_H - PAGE_MARGIN * 2;
+      const columns = Math.max(1, Math.floor((usableW + CARD_GAP) / (CARD_W + CARD_GAP)));
+      const rows = Math.max(1, Math.floor((usableH + CARD_GAP) / (CARD_H + CARD_GAP)));
+      const cardsPerPage = columns * rows;
+
+      const contentW = columns * CARD_W + (columns - 1) * CARD_GAP;
+      const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
+      const START_X = (PAGE_W - contentW) / 2;
+      const START_Y = (PAGE_H - contentH) / 2;
 
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
       for (let i = 0; i < list.length; i++) {
-        if (i > 0) pdf.addPage();
+        if (i > 0 && i % cardsPerPage === 0) pdf.addPage();
+
+        const slotIndex = i % cardsPerPage;
+        const row = Math.floor(slotIndex / columns);
+        const col = slotIndex % columns;
+        const x = START_X + col * (CARD_W + CARD_GAP);
+        const y = START_Y + row * (CARD_H + CARD_GAP);
 
         const dataUrl = await generateIDCard(list[i]);
-        pdf.addImage(dataUrl, 'PNG', START_X, START_Y, CARD_W, CARD_H, undefined, 'FAST');
+        pdf.addImage(dataUrl, 'PNG', x, y, CARD_W, CARD_H, undefined, 'FAST');
       }
+
+      const totalPages = Math.ceil(list.length / cardsPerPage);
 
       if (opts.autoPrint) {
         pdf.autoPrint();
@@ -637,7 +654,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       toast({
         title: 'PDF Ready',
-        description: `${list.length} card(s) on ${list.length} A4 page(s)`,
+        description: `${list.length} card(s) on ${totalPages} A4 page(s) (${cardsPerPage}/page)`,
       });
     } catch (e) {
       console.error('PDF export error:', e);
@@ -712,7 +729,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                 <Button
                   onClick={() => exportPDF(false)}
                   disabled={isGenerating || students.length === 0}
-                  title="Download A4 PDF with one full ID card per page, matching preview layout"
+                  title="Download A4 PDF with multiple standard-size ID cards per page"
                 >
                   {isGenerating
                     ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Building PDF…</>
@@ -726,7 +743,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                   variant="secondary"
                   onClick={() => exportPDF(true)}
                   disabled={isGenerating || students.length === 0}
-                  title="Open print dialog with one full ID card per A4 page"
+                  title="Open print dialog with multiple standard-size ID cards per page"
                 >
                   <Printer className="w-4 h-4 mr-2" />
                   Print
