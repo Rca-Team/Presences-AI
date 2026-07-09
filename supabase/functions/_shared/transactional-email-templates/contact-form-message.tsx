@@ -67,30 +67,33 @@ export const template = {
 
 const main = {
   backgroundColor: '#ffffff',
-  fontFamily: 'Segoe UI, Roboto, Helvetica, Arial, sans-serif',
+  fontFamily: "Manrope, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   margin: '0',
   padding: '24px',
 }
 const container = {
-  border: '1px solid hsl(220 15% 90%)',
-  borderRadius: '12px',
+  border: '1px solid #2a3558',
+  borderRadius: '18px',
   padding: '24px',
+  backgroundColor: '#0f1426',
+  boxShadow: '0 22px 46px -28px rgba(15, 20, 38, 0.85)',
 }
-const h1 = { margin: '0 0 16px', color: 'hsl(220 25% 10%)', fontSize: '22px' }
-const h2 = { margin: '14px 0 8px', color: 'hsl(220 25% 10%)', fontSize: '16px' }
+const h1 = { margin: '0 0 16px', color: '#f8fbff', fontSize: '22px' }
+const h2 = { margin: '14px 0 8px', color: '#f8fbff', fontSize: '16px' }
 const infoCard = {
-  border: '1px solid hsl(220 15% 90%)',
+  border: '1px solid #2f3a63',
   borderRadius: '10px',
-  backgroundColor: 'hsl(210 20% 98%)',
+  backgroundColor: '#111a33',
   padding: '12px 14px',
   marginBottom: '14px',
 }
-const infoLine = { color: 'hsl(220 25% 14%)', fontSize: '13px', lineHeight: '20px', margin: '0 0 6px' }
+const infoLine = { color: '#c7d2f0', fontSize: '13px', lineHeight: '20px', margin: '0 0 6px' }
 const messageCard = {
-  border: '1px solid hsl(220 15% 90%)',
+  border: '1px solid #2f3a63',
   borderRadius: '10px',
   padding: '12px 14px',
+  backgroundColor: '#111a33',
   marginBottom: '14px',
 }
-const messageText = { color: 'hsl(220 25% 14%)', fontSize: '14px', lineHeight: '22px', margin: '0', whiteSpace: 'pre-wrap' as const }
-const muted = { color: 'hsl(220 15% 40%)', fontSize: '12px', lineHeight: '18px', margin: '14px 0 0' }
+const messageText = { color: '#c7d2f0', fontSize: '14px', lineHeight: '22px', margin: '0', whiteSpace: 'pre-wrap' as const }
+const muted = { color: '#8f9bc2', fontSize: '12px', lineHeight: '18px', margin: '14px 0 0' }
