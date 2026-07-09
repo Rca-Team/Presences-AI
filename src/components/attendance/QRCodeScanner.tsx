@@ -29,6 +29,8 @@ interface QRCodeScannerProps {
 
 interface QRData {
   id: string;
+  user_id?: string;
+  student_id?: string;
   name: string;
   employee_id: string;
   category: string;
@@ -58,8 +60,80 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [lastScannedId, setLastScannedId] = useState<string | null>(null);
 
+  const normalizeValue = (value: unknown) => String(value ?? '').trim();
+
+  const parseQRPayload = (rawValue: string): QRData | null => {
+    const raw = normalizeValue(rawValue);
+    if (!raw) return null;
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        return {
+          id: normalizeValue((parsed as any).id || (parsed as any).user_id || (parsed as any).student_id),
+          user_id: normalizeValue((parsed as any).user_id),
+          student_id: normalizeValue((parsed as any).student_id),
+          name: normalizeValue((parsed as any).name || 'Student'),
+          employee_id: normalizeValue((parsed as any).employee_id || (parsed as any).student_id || (parsed as any).id),
+          category: normalizeValue((parsed as any).category || 'General'),
+          timestamp: Number((parsed as any).timestamp || Date.now()),
+        };
+      }
+    } catch {
+      // Support plain-text QR payloads (legacy cards): treat as ID/employee_id.
+      return {
+        id: raw,
+        user_id: raw,
+        student_id: raw,
+        name: 'Student',
+        employee_id: raw,
+        category: 'General',
+        timestamp: Date.now(),
+      };
+    }
+
+    return null;
+  };
+
   const getScanIdentity = (qrData: QRData) =>
-    String(qrData.id || qrData.employee_id || qrData.name || '').trim().toLowerCase();
+    String(qrData.user_id || qrData.id || qrData.student_id || qrData.employee_id || qrData.name || '').trim().toLowerCase();
+
+  const looksLikeUuid = (value: string) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+
+  const resolveAttendanceTargetId = async (qrData: QRData) => {
+    const preferred = normalizeValue(qrData.user_id || qrData.id);
+    if (preferred && looksLikeUuid(preferred)) return preferred;
+
+    const studentKey = normalizeValue(qrData.student_id || qrData.employee_id || qrData.id);
+    if (!studentKey) return preferred || null;
+
+    const [descriptorRes, attendanceRes] = await Promise.all([
+      supabase
+        .from('face_descriptors')
+        .select('user_id')
+        .eq('student_id', studentKey)
+        .not('user_id', 'is', null)
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('attendance_records')
+        .select('user_id')
+        .eq('student_id', studentKey)
+        .not('user_id', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+
+    const resolvedUserId =
+      normalizeValue(descriptorRes.data?.user_id) ||
+      normalizeValue(attendanceRes.data?.user_id) ||
+      preferred ||
+      studentKey;
+
+    return resolvedUserId || null;
+  };
 
   const isDuplicateScan = (identity: string) => {
     const now = Date.now();
@@ -112,17 +186,35 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
   }, []);
 
   const processQRCode = async (qrDataString: string) => {
+    const qrData = parseQRPayload(qrDataString);
+    if (!qrData) {
+      setScanResult({ success: false });
+      toast({
+        title: 'Invalid QR Code',
+        description: 'This QR code format is not supported.',
+        variant: 'destructive',
+      });
+      setTimeout(() => {
+        setScanResult(null);
+      }, 1500);
+      return;
+    }
+
     try {
-      const qrData: QRData = JSON.parse(qrDataString);
       const identity = getScanIdentity(qrData);
       if (!identity) return;
       
       // Prevent duplicate scans within cooldown window (spam protection)
       if (isDuplicateScan(identity)) return;
-      if (qrData.id === lastScannedId) return;
+      if ((qrData.user_id || qrData.id) === lastScannedId) return;
+
+      const attendanceTargetId = await resolveAttendanceTargetId(qrData);
+      if (!attendanceTargetId) {
+        throw new Error('No valid student identity found in QR payload.');
+      }
       
-      setLastScannedId(qrData.id);
-      setIsScanning(false);
+      setLastScannedId(qrData.user_id || qrData.id || attendanceTargetId);
+      stopScanning();
       
       // Record attendance — use the admin-configured cutoff time
       const cutoff = await getAttendanceCutoffTime();
@@ -135,7 +227,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       }
       
       await recordAttendance(
-        qrData.id,
+        attendanceTargetId,
         status,
         1,
         {
@@ -159,28 +251,30 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         description: `Welcome, ${qrData.name}! Status: ${status}`,
       });
 
-      onScanComplete?.({ success: true, name: qrData.name, userId: qrData.id });
+      onScanComplete?.({ success: true, name: qrData.name, userId: attendanceTargetId });
 
       // Parent channels + local/background push in one unified flow
-      sendAutoParentNotification(qrData.id, qrData.name, status).catch(() => undefined);
+      sendAutoParentNotification(attendanceTargetId, qrData.name, status).catch(() => undefined);
 
-      // Reset after 3 seconds
+      // Reset after 3 seconds, then auto-restart scanner loop
       setTimeout(() => {
         setScanResult(null);
         setLastScannedId(null);
+        startScanning();
       }, 3000);
 
     } catch (err) {
       console.error('QR processing error:', err);
       setScanResult({ success: false });
       toast({
-        title: "Invalid QR Code",
-        description: "This QR code is not valid for attendance.",
+        title: "QR Scan Failed",
+        description: "Unable to verify this card right now. Try again.",
         variant: "destructive"
       });
       
       setTimeout(() => {
         setScanResult(null);
+        if (!isLoopActiveRef.current) startScanning();
       }, 2000);
     }
   };
