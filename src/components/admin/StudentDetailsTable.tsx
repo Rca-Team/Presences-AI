@@ -107,8 +107,8 @@ const StudentDetailsTable: React.FC = () => {
         if (!name || name === 'Unknown' || name === 'User') return;
         const empKey = (meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || r.student_id || '').toString().trim();
         const canonicalUserId = r.user_id || (empKey ? employeeToUserId.get(empKey) : null);
-        // Canonical identity: resolved user_id first, then employee/roll, then record id
-        const key = (canonicalUserId || empKey || r.id) as string;
+        // Deduplicate by student/employee key first (stable per student), then user_id.
+        const key = (empKey || canonicalUserId || r.id) as string;
         if (map.has(key)) return;
 
         const avatar = pickPreferredPhotoCandidate(

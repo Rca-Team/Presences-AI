@@ -198,10 +198,10 @@ const GateMode = () => {
           .map((row: any) => {
             const metadata = (row.device_info as any)?.metadata || {};
             return (
-              row.user_id ||
               row.student_id ||
               metadata.employee_id ||
               metadata.roll_number ||
+              row.user_id ||
               (row.device_info as any)?.employee_id ||
               row.id
             );

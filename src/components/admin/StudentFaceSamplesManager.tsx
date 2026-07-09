@@ -162,8 +162,8 @@ const StudentFaceSamplesManager: React.FC = () => {
         const m = di.metadata || {};
         const empId = (m.employee_id || m.roll_number || di.employee_id || r.student_id || '').toString().trim();
         const canonicalUserId = r.user_id || (empId ? employeeToUserId.get(empId) : null);
-        // Prefer canonical user_id, then employee key, then record id
-        return (canonicalUserId || empId || r.id) as string | null;
+        // Prefer student/employee identity first so shared user_id cannot collapse students
+        return (empId || canonicalUserId || r.id) as string | null;
       };
 
       (allAttRes.data || []).forEach((r: any) => {
