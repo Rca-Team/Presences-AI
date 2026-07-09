@@ -146,7 +146,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       (allAttRes.data || []).forEach((r: any) => {
         const di = r.device_info || {};
         const m = di.metadata || {};
-        const empKey = (m.employee_id || m.roll_number || di.employee_id || '').toString().trim();
+        const empKey = (m.employee_id || m.roll_number || di.employee_id || r.student_id || '').toString().trim();
         if (r.user_id && empKey) employeeToUserId.set(empKey, r.user_id);
       });
 
@@ -160,7 +160,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       const keyForRecord = (r: any): string | null => {
         const di = r.device_info || {};
         const m = di.metadata || {};
-        const empId = (m.employee_id || m.roll_number || di.employee_id || '').toString().trim();
+        const empId = (m.employee_id || m.roll_number || di.employee_id || r.student_id || '').toString().trim();
         const canonicalUserId = r.user_id || (empId ? employeeToUserId.get(empId) : null);
         // Prefer canonical user_id, then employee key, then record id
         return (canonicalUserId || empId || r.id) as string | null;
@@ -169,7 +169,7 @@ const StudentFaceSamplesManager: React.FC = () => {
       (allAttRes.data || []).forEach((r: any) => {
         const di = r.device_info || {};
         const m = di.metadata || {};
-        const name = m.name || di.name || (r.user_id ? profileMap.get(r.user_id) : '') || '';
+        const name = m.name || di.name || r.student_name || (r.user_id ? profileMap.get(r.user_id) : '') || '';
         if (!name || name === 'Unknown' || name === 'User') return;
         const key = keyForRecord(r);
         if (!key) return;
@@ -177,11 +177,11 @@ const StudentFaceSamplesManager: React.FC = () => {
           grouped.set(key, {
             userId: r.user_id || key,
             name,
-            employeeId: m.employee_id || m.roll_number || di.employee_id || key,
+            employeeId: m.employee_id || m.roll_number || di.employee_id || r.student_id || key,
             samples: [],
           });
           if (r.user_id) userIdToKey.set(r.user_id, key);
-          const empId = m.employee_id || m.roll_number || di.employee_id;
+          const empId = m.employee_id || m.roll_number || di.employee_id || r.student_id;
           if (empId) employeeToKey.set(empId, key);
         } else if (r.user_id && !userIdToKey.has(r.user_id)) {
           userIdToKey.set(r.user_id, key);
