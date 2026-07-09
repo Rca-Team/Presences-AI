@@ -124,7 +124,7 @@ const StudentFaceSamplesManager: React.FC = () => {
           .order('created_at', { ascending: false }),
         supabase
           .from('attendance_records')
-          .select('id, user_id, image_url, status, device_info, timestamp, confidence_score')
+          .select('id, user_id, student_id, student_name, image_url, status, device_info, timestamp, confidence_score')
           .neq('status', 'unauthorized')
           .order('timestamp', { ascending: false }),
         supabase

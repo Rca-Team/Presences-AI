@@ -191,7 +191,17 @@ const GateMode = () => {
 
       const registeredIds = new Set(
         registeredRows
-          .map((row: any) => row.user_id || row.student_id)
+          .map((row: any) => {
+            const metadata = (row.device_info as any)?.metadata || {};
+            return (
+              row.user_id ||
+              row.student_id ||
+              metadata.employee_id ||
+              metadata.roll_number ||
+              (row.device_info as any)?.employee_id ||
+              row.id
+            );
+          })
           .filter(Boolean),
       );
       const rows    = attRes.data || [];
