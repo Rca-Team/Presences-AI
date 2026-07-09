@@ -92,6 +92,14 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     return '';
   };
 
+  const normalizeCardField = (value: unknown, fallback = 'N/A') => {
+    const text = String(value ?? '').trim();
+    if (!text) return fallback;
+    const normalized = text.toLowerCase();
+    if (['null', 'undefined', 'n/a', 'na', '-', '—'].includes(normalized)) return fallback;
+    return text;
+  };
+
   const waitForEmbeddedImages = async (container: HTMLElement) => {
     const images = Array.from(container.querySelectorAll('img'));
     if (images.length === 0) return;
@@ -301,6 +309,14 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
   const buildCardHTML = (student: StudentData, qrBase64: string, logoSrc: string) => {
     const classLabel = getCategoryLabel(student.category);
+    const displayName = normalizeCardField(student.name, 'N/A');
+    const displayRollNumber = normalizeCardField(student.roll_number, 'N/A');
+    const displayStudentId = normalizeCardField(student.employee_id, 'N/A');
+    const displayBloodGroup = normalizeCardField(student.blood_group, 'N/A');
+    const displayParentName = normalizeCardField(student.parent_name, 'N/A');
+    const displayParentPhone = normalizeCardField(student.parent_phone, 'N/A');
+    const displayTransportMode = normalizeCardField(student.transport_mode, 'N/A');
+    const displayAddress = normalizeCardField(student.address, 'N/A');
     
     return `
       <div style="
@@ -360,8 +376,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
             }
           </div>
           <div style="flex: 1; min-width: 0;">
-            <div style="font-size: 18px; font-weight: 800; color: #1e3a5f; line-height: 1.2; margin-bottom: 4px;">
-              ${student.name}
+              <div style="font-size: 18px; font-weight: 800; color: #1e3a5f; line-height: 1.2; margin-bottom: 4px;">
+                ${displayName}
             </div>
             <div style="
               display: inline-block; background: #1e3a5f; color: #ffffff;
@@ -383,33 +399,32 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
             <table style="width: 100%; border-collapse: collapse;">
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b; width: 40%;">Roll No.</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #1e3a5f;">: ${student.roll_number}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #1e3a5f;">: ${displayRollNumber}</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Student ID</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${student.employee_id}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${displayStudentId}</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Blood Group</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #dc2626;">: ${student.blood_group}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 700; color: #dc2626;">: ${displayBloodGroup}</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Parent/Guardian</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${student.parent_name}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${displayParentName}</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Contact No.</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${student.parent_phone}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${displayParentPhone}</td>
               </tr>
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b;">Transport</td>
-                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${student.transport_mode}</td>
+                <td style="padding: 5px 0; font-size: 12px; font-weight: 600; color: #1e3a5f;">: ${displayTransportMode}</td>
               </tr>
-              ${student.address && student.address !== '—' ? `
               <tr>
                 <td style="padding: 5px 0; font-size: 11px; color: #64748b; vertical-align: top;">Address</td>
-                <td style="padding: 5px 0; font-size: 11px; font-weight: 600; color: #1e3a5f; line-height: 1.4;">: ${student.address}</td>
-              </tr>` : ''}
+                <td style="padding: 5px 0; font-size: 11px; font-weight: 600; color: #1e3a5f; line-height: 1.4;">: ${displayAddress}</td>
+              </tr>
             </table>
           </div>
         </div>
@@ -750,7 +765,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold truncate">{student.name}</p>
-                      <p className="text-xs text-muted-foreground">{student.employee_id}</p>
+                      <p className="text-xs text-muted-foreground">{normalizeCardField(student.employee_id)}</p>
                     </div>
                   </div>
                   
@@ -847,7 +862,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                       )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-base sm:text-lg font-extrabold text-[#1e3a5f] leading-tight truncate">{previewStudent.name}</p>
+                      <p className="text-base sm:text-lg font-extrabold text-[#1e3a5f] leading-tight truncate">{normalizeCardField(previewStudent.name)}</p>
                       <span className="inline-block mt-1 bg-[#1e3a5f] text-white text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded">
                         {getCategoryLabel(previewStudent.category)}
                       </span>
@@ -861,13 +876,13 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                   <div className="px-3 sm:px-4 mt-1">
                     <div className="bg-slate-50 rounded-lg p-2.5 sm:p-3 border border-slate-200 text-[11px] sm:text-[12px]">
                       {[
-                        ['Roll No.', previewStudent.roll_number],
-                        ['Student ID', previewStudent.employee_id],
-                        ['Blood Group', previewStudent.blood_group],
-                        ['Parent/Guardian', previewStudent.parent_name],
-                        ['Contact No.', previewStudent.parent_phone],
-                        ['Transport', previewStudent.transport_mode],
-                        ...(previewStudent.address && previewStudent.address !== '—' ? [['Address', previewStudent.address]] : []),
+                        ['Roll No.', normalizeCardField(previewStudent.roll_number)],
+                        ['Student ID', normalizeCardField(previewStudent.employee_id)],
+                        ['Blood Group', normalizeCardField(previewStudent.blood_group)],
+                        ['Parent/Guardian', normalizeCardField(previewStudent.parent_name)],
+                        ['Contact No.', normalizeCardField(previewStudent.parent_phone)],
+                        ['Transport', normalizeCardField(previewStudent.transport_mode)],
+                        ['Address', normalizeCardField(previewStudent.address)],
                       ].map(([label, value], i) => (
                         <div key={i} className="flex py-[4px]">
                           <span className={`text-slate-500 text-[10px] sm:text-[11px] ${label === 'Address' ? 'w-[40%] pt-[1px]' : 'w-[40%]'}`}>{label}</span>
