@@ -140,11 +140,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
         const deviceInfo = record.device_info as any;
         const metadata = deviceInfo?.metadata;
         
-        const resolvedName =
-          metadata?.name ||
-          (record as any).student_name ||
-          (record.user_id ? profileImageByUserId.get(record.user_id) : '') ||
-          '';
+        const resolvedName = metadata?.name || (record as any).student_name || '';
 
         if (resolvedName && resolvedName !== 'Unknown') {
           const empKey = (metadata?.employee_id || metadata?.roll_number || deviceInfo?.employee_id || '').toString().trim();
