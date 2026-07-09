@@ -50,7 +50,7 @@ const StudentDetailsTable: React.FC = () => {
       const [attendanceRes, descriptorsRes, profilesRes] = await Promise.all([
         supabase
           .from('attendance_records')
-          .select('id, user_id, status, device_info, category, image_url, timestamp')
+          .select('id, user_id, student_id, student_name, status, device_info, category, image_url, timestamp')
           .eq('status', 'registered')      // only registered students, not present/late rows
           .order('timestamp', { ascending: false }),
         supabase
@@ -95,7 +95,7 @@ const StudentDetailsTable: React.FC = () => {
       (data || []).forEach((r: any) => {
         const deviceInfo = r.device_info || {};
         const meta = deviceInfo?.metadata || {};
-        const empKey = (meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || '').toString().trim();
+        const empKey = (meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || r.student_id || '').toString().trim();
         if (r.user_id && empKey) employeeToUserId.set(empKey, r.user_id);
       });
 
@@ -103,9 +103,9 @@ const StudentDetailsTable: React.FC = () => {
       (data || []).forEach((r: any) => {
         const deviceInfo = r.device_info || {};
         const meta = deviceInfo?.metadata || {};
-        const name = meta?.name || deviceInfo?.name || '';
+        const name = meta?.name || deviceInfo?.name || r.student_name || '';
         if (!name || name === 'Unknown' || name === 'User') return;
-        const empKey = (meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || '').toString().trim();
+        const empKey = (meta?.employee_id || meta?.roll_number || deviceInfo?.employee_id || r.student_id || '').toString().trim();
         const canonicalUserId = r.user_id || (empKey ? employeeToUserId.get(empKey) : null);
         // Canonical identity: resolved user_id first, then employee/roll, then record id
         const key = (canonicalUserId || empKey || r.id) as string;
