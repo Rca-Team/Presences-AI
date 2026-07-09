@@ -1,87 +1,44 @@
-## Project Launch Plan (5-Day Single-Class Pilot)
+## Approved implementation plan
 
-### Goal
-Launch Presence in **one class first** to maximize recognition accuracy and reliability before wider rollout.
+### 1) ID card + print fixes (first batch)
 
-### Success criteria for pilot
-- Gate Mode correctly recognizes registered students with minimal false “unrecognized” results.
-- Attendance updates are reflected immediately in attendance stats and admin views.
-- Registration flow is stable (no duplicate drafts, no duplicate final submissions).
-- Parent notifications (email/WhatsApp/SMS) deliver consistently for pilot events.
-- No critical runtime errors during normal daily usage.
+- Increase QR size in both generated card output and modal preview so they match visually.
+- Make student loading deterministic and complete for all registered students by tightening dedupe identity priority and stable sorting.
+- Keep A4 export locked to **9 cards/page** (3×3) with fixed card dimensions, spacing, and non-intrusive cut marks.
+- Fix print glitches by hardening render timing, improving popup-blocked fallback, and ensuring consistent image/background rendering.
+- Validate by checking exported count equals registered count and first PDF page renders exactly 9 cards.
 
-## Day-by-day execution
+### 2) QR scanner effectiveness (QR scanner only)
 
-### Day 1 — Stability freeze + critical flow verification
-- Freeze non-essential visual changes.
-- Run focused bug triage for 3 critical flows:
-  - Register
-  - Gate Mode
-  - Attendance
-- Build a launch checklist with pass/fail outcomes per flow.
-- Confirm pilot class roster quality (clear photos, complete parent contact fields).
+- Upgrade `QRCodeScanner` to true loop scanning with controlled frame cadence and safe start/stop lifecycle.
+- Add anti-spam protection using scan cooldown windows + in-flight lock to prevent duplicate attendance writes.
+- Improve speed by reducing unnecessary work per frame and reusing detector where possible.
+- Support detection from anywhere on screen by scanning full frame continuously (no center-only dependence).
+- Add robust invalid/duplicate feedback states without interrupting the scan loop.
 
-### Day 2 — Registration and data integrity hardening
-- Validate registration draft/resume behavior end-to-end.
-- Verify idempotency protections prevent duplicate records.
-- Validate that student records, face samples, and parent contacts are complete and visible.
-- Add/confirm guardrails for slow network retries to avoid duplicate writes.
+### 3) Realtime admin updates across all places
 
-### Day 3 — Gate Mode accuracy and speed tuning
-- Test Gate Mode in real classroom-like conditions (lighting, angle, distance, movement).
-- Calibrate recognition thresholds using pilot-class sample runs.
-- Optimize scan loop responsiveness (fast feedback, reduced UI blocking).
-- Validate fallback behavior for unrecognized students (clear operator path).
+- Ensure all relevant admin views subscribe to realtime changes (`attendance_records`, `face_descriptors`, `gate_entries`, and related profile rows as needed).
+- Normalize refresh behavior so Student Details, Face Samples, ID card generator counts, and dashboard stats stay in sync automatically.
+- Avoid noisy re-fetch loops by debouncing/throttling subscription-driven refreshes.
 
-### Day 4 — Attendance consistency + notifications QA
-- Verify manual and auto attendance confirmation both persist correctly.
-- Confirm admin dashboard and stats update in near real-time after each attendance event.
-- Run notification matrix test:
-  - Email
-  - WhatsApp
-  - SMS
-- Validate error handling and user feedback when any channel fails.
+### 4) Realtime push + email notifications (using Resend)
 
-### Day 5 — Launch rehearsal + go-live
-- Execute full technical smoke test on mobile and desktop.
-- Run one complete “school day simulation” for the single class:
-  - Morning entry (Gate Mode)
-  - Attendance sync
-  - Admin review
-  - Parent notification trigger
-- Capture known issues and classify:
-  - Must-fix before pilot
-  - Safe to defer
-- Go live for pilot class with active monitoring window.
+- Keep push flow wired through existing push service/edge function, triggered from realtime attendance/gate events.
+- Add Resend-powered email dispatch path in backend function(s) for attendance/gate alerts with input validation and structured error handling.
+- Add required secret flow for Resend key (secure project secret, not client-side), then wire function invocation from the event path.
+- Return provider errors clearly to the client/admin logs for operational visibility.  
 
-## Technical QA checklist (pilot gate)
-- Authentication/session stability across protected routes.
-- Register page: no draft spam, no duplicate student creation.
-- Gate page: opens reliably, scanner starts reliably, no hook/runtime crashes.
-- Attendance page: manual confirmation writes to database and propagates to dashboards.
-- Admin page: no dynamic import failures, live stats refresh works.
-- Notification functions: valid credentials, successful sends, clear failure logs.
-- Performance: route transitions smooth, loading skeletons shown on heavy pages.
+- also puch local app notifications realtime 
 
-## Monitoring and incident response (pilot week)
-- Monitor critical errors every day during class start window.
-- Keep a quick rollback path for Gate Mode threshold/config changes.
-- Maintain a short incident log:
-  - time
-  - feature
-  - symptom
-  - fix applied
-  - verification result
+### 5) Verification pass
 
-## Pilot exit criteria (before expanding beyond one class)
-- 3 consecutive school days without critical failures.
-- Recognition accuracy and attendance correctness meet school expectations.
-- Notification delivery is consistently reliable for pilot use cases.
-- Team is confident in standard operating flow for daily use.
+- Verify: larger QR appears in preview + export, all registered students included, 9-per-page PDF layout stable.
+- Verify QR scanner: no spam duplicates, continuous loop works, fast detection from any screen area.
+- Verify realtime: updates appear in admin tabs without manual refresh.
+- Verify notifications: push and Resend email both fire on new events and failures are surfaced cleanly.
 
-## Technical details
-- Prioritize reliability over new features during this 5-day window.
-- Use controlled threshold tuning in Gate Mode and document each change with measured outcomes.
-- Keep write paths idempotent for registration and attendance events.
-- Validate real-time updates through the full chain: write → dashboard/admin view.
-- Treat notification channels as independent; one failure should not block others.
+## Technical notes
+
+- Primary files: `src/components/admin/StudentIDCardGenerator.tsx`, `src/components/attendance/QRCodeScanner.tsx`, `src/components/admin/StudentDetailsTable.tsx`, `src/components/admin/StudentFaceSamplesManager.tsx`, `src/pages/Admin.tsx`, `src/hooks/useRealtimeAttendance.ts`, notification edge functions.
+- Resend integration will be implemented server-side via secrets-backed function calls (no API key in frontend code).
