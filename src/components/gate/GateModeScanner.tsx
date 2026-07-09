@@ -80,6 +80,12 @@ interface LiveMatch {
   timestamp: number;
 }
 
+const isUnknownIdentityValue = (value?: string | null) => {
+  if (!value) return true;
+  const normalized = value.trim().toLowerCase();
+  return !normalized || normalized === 'unknown' || normalized === 'null' || normalized === 'undefined';
+};
+
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function euclidean(a: Float32Array, b: Float32Array): number {
@@ -608,9 +614,14 @@ const GateModeScanner = ({
             }
           }
 
-          // ── Local fallback ─────────────────────────────────────────────────
+          // ── Local fallback / identity recovery ────────────────────────────
           let localResult: { recognized: boolean; employee?: any; confidence?: number } | null = null;
-          if (!visionResult?.recognized) {
+          const needsLocalIdentityRecovery =
+            !visionResult?.recognized ||
+            isUnknownIdentityValue(visionResult?.studentName) ||
+            isUnknownIdentityValue(visionResult?.userId || null);
+
+          if (needsLocalIdentityRecovery) {
             try { localResult = await recognizeFace(detection.descriptor); } catch {}
           }
 
@@ -628,24 +639,31 @@ const GateModeScanner = ({
           }
 
           // ── Merge results ──────────────────────────────────────────────────
-          const usingLocal    = !visionResult?.recognized && !!localResult?.recognized;
-          const rawRecognized = usingLocal ? !!localResult?.recognized : !!visionResult?.recognized;
-          const rawConfidence = usingLocal
-            ? Number(localResult?.confidence || 0)
-            : Number(visionResult?.confidence || detection.detection.score || 0);
-          const resolvedName  = usingLocal
-            ? (localResult?.employee?.name  || 'Unknown')
-            : (visionResult?.studentName    || 'Unknown');
-          const resolvedId    = usingLocal
-            ? (localResult?.employee?.id    || null)
-            : (visionResult?.userId         || null);
+          const cloudRecognized = !!visionResult?.recognized;
+          const localRecognized = !!localResult?.recognized;
+          const cloudName       = visionResult?.studentName || 'Unknown';
+          const cloudId         = visionResult?.userId || null;
+          const localName       = localResult?.employee?.name || 'Unknown';
+          const localId         = localResult?.employee?.id || null;
 
-          const isRecognized  = rawRecognized && rawConfidence >= MIN_RECOGNITION_CONF;
-          const studentName   = isRecognized ? resolvedName   : 'Unknown';
-          const studentId     = isRecognized ? resolvedId     : null;
+          const useLocalIdentity =
+            localRecognized &&
+            (!cloudRecognized || isUnknownIdentityValue(cloudName) || isUnknownIdentityValue(cloudId));
+
+          const rawRecognized = cloudRecognized || localRecognized;
+          const rawConfidence = useLocalIdentity
+            ? Number(localResult?.confidence || 0)
+            : Number(visionResult?.confidence || localResult?.confidence || detection.detection.score || 0);
+          const resolvedName  = useLocalIdentity ? localName : cloudName;
+          const resolvedId    = useLocalIdentity ? localId : cloudId;
+
+          const hasResolvedIdentity = !isUnknownIdentityValue(resolvedName) && !isUnknownIdentityValue(resolvedId);
+          const isRecognized  = rawRecognized && rawConfidence >= MIN_RECOGNITION_CONF && hasResolvedIdentity;
+          const studentName   = isRecognized ? resolvedName : 'Unknown';
+          const studentId     = isRecognized ? resolvedId : null;
           const confidence    = rawConfidence;
 
-          if (usingLocal && isRecognized) {
+          if (useLocalIdentity && isRecognized) {
             console.log(`[Gate] Local fallback: "${studentName}" @ ${(confidence * 100).toFixed(1)}%`);
           }
 
