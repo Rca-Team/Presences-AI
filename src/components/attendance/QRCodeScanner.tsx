@@ -162,12 +162,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
       onScanComplete?.({ success: true, name: qrData.name, userId: qrData.id });
 
-      // Instant local app push notification for operator feedback
-      pushNotificationService
-        .sendAttendanceNotification(qrData.name, status, qrData.category || 'Unknown', new Date())
-        .catch(() => undefined);
-
-      // Parent channels (Resend email + in-app/background channels via edge function)
+      // Parent channels + local/background push in one unified flow
       sendAutoParentNotification(qrData.id, qrData.name, status).catch(() => undefined);
 
       // Reset after 3 seconds
