@@ -572,9 +572,13 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const PAGE_W = 210, PAGE_H = 297;
       const MARGIN = 8, GUTTER = 4;
       const CARD_W = 54, CARD_H = 85.6; // CR80 portrait
-      const COLS = Math.floor((PAGE_W - 2 * MARGIN + GUTTER) / (CARD_W + GUTTER)); // 3
-      const ROWS = Math.floor((PAGE_H - 2 * MARGIN + GUTTER) / (CARD_H + GUTTER)); // 3
+      const COLS = 3;
+      const ROWS = 3;
       const PER_PAGE = COLS * ROWS;
+      const GRID_W = COLS * CARD_W + (COLS - 1) * GUTTER;
+      const GRID_H = ROWS * CARD_H + (ROWS - 1) * GUTTER;
+      const START_X = Math.max(MARGIN, (PAGE_W - GRID_W) / 2);
+      const START_Y = Math.max(MARGIN, (PAGE_H - GRID_H) / 2);
 
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
@@ -586,15 +590,15 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
         const col = idxOnPage % COLS;
         const row = Math.floor(idxOnPage / COLS);
-        const x = MARGIN + col * (CARD_W + GUTTER);
-        const y = MARGIN + row * (CARD_H + GUTTER);
+        const x = START_X + col * (CARD_W + GUTTER);
+        const y = START_Y + row * (CARD_H + GUTTER);
 
         pdf.addImage(dataUrl, 'PNG', x, y, CARD_W, CARD_H, undefined, 'FAST');
 
         // Light cut guides at corners
         pdf.setDrawColor(180);
         pdf.setLineWidth(0.1);
-        const t = 2; // tick length
+        const t = 1.2; // tick length, outside card edges only
         pdf.line(x - t, y, x, y);            pdf.line(x, y - t, x, y);
         pdf.line(x + CARD_W, y, x + CARD_W + t, y); pdf.line(x + CARD_W, y - t, x + CARD_W, y);
         pdf.line(x - t, y + CARD_H, x, y + CARD_H); pdf.line(x, y + CARD_H, x, y + CARD_H + t);
@@ -604,12 +608,35 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       if (opts.autoPrint) {
         pdf.autoPrint();
-        const blobUrl = pdf.output('bloburl');
-        const w = window.open(blobUrl as unknown as string, '_blank');
+        const blob = pdf.output('blob');
+        const blobUrl = URL.createObjectURL(blob);
+        const w = window.open(blobUrl, '_blank');
         if (!w) {
-          // Pop-up blocked → fall back to download
-          pdf.save(opts.filename || 'student-id-cards.pdf');
-          toast({ title: 'Pop-up blocked', description: 'Saved PDF instead — open it to print.' });
+          // Pop-up blocked → try hidden iframe print before download fallback
+          const iframe = document.createElement('iframe');
+          iframe.style.position = 'fixed';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          iframe.style.width = '0';
+          iframe.style.height = '0';
+          iframe.style.border = '0';
+          iframe.src = blobUrl;
+          iframe.onload = () => {
+            try {
+              iframe.contentWindow?.focus();
+              iframe.contentWindow?.print();
+            } catch {
+              pdf.save(opts.filename || 'student-id-cards.pdf');
+            }
+            window.setTimeout(() => {
+              URL.revokeObjectURL(blobUrl);
+              iframe.remove();
+            }, 1500);
+          };
+          document.body.appendChild(iframe);
+          toast({ title: 'Print opened', description: 'If print dialog did not open, the PDF will download.' });
+        } else {
+          window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
         }
       } else {
         pdf.save(opts.filename || 'student-id-cards.pdf');
