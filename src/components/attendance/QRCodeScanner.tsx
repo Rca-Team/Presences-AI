@@ -23,6 +23,8 @@ import {
 
 interface QRCodeScannerProps {
   onScanComplete?: (result: { success: boolean; name?: string; userId?: string }) => void;
+  autoStart?: boolean;
+  hideManualControls?: boolean;
 }
 
 interface QRData {
@@ -33,7 +35,11 @@ interface QRData {
   timestamp: number;
 }
 
-const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
+const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
+  onScanComplete,
+  autoStart = false,
+  hideManualControls = false,
+}) => {
   const { toast } = useToast();
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -181,6 +187,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
   };
 
   const startScanning = () => {
+    if (isLoopActiveRef.current) return;
     setIsScanning(true);
     setScanResult(null);
 
@@ -219,6 +226,17 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!autoStart) return;
+    const timer = window.setTimeout(() => {
+      startScanning();
+    }, 450);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [autoStart]);
 
   return (
     <div className="relative w-full">
@@ -385,39 +403,41 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({ onScanComplete }) => {
       </div>
 
       {/* Controls */}
-      <div className="flex flex-wrap gap-3 mt-6 justify-center">
-        <Button
-          variant="outline"
-          size="lg"
-          onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')}
-          className="border-purple-500/30 text-purple-600 hover:bg-purple-500/10"
-        >
-          <RefreshCw className="w-5 h-5 mr-2" />
-          Flip Camera
-        </Button>
+      {!hideManualControls && (
+        <div className="flex flex-wrap gap-3 mt-6 justify-center">
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')}
+            className="border-purple-500/30 text-purple-600 hover:bg-purple-500/10"
+          >
+            <RefreshCw className="w-5 h-5 mr-2" />
+            Flip Camera
+          </Button>
 
-        <Button
-          size="lg"
-          onClick={isScanning ? stopScanning : startScanning}
-          className={`px-8 ${
-            isScanning 
-              ? 'bg-red-500 hover:bg-red-600' 
-              : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
-          } text-white shadow-lg ${isScanning ? 'shadow-red-500/25' : 'shadow-purple-500/25'}`}
-        >
-          {isScanning ? (
-            <>
-              <Scan className="w-5 h-5 mr-2 animate-pulse" />
-              Stop Scanning
-            </>
-          ) : (
-            <>
-              <QrCode className="w-5 h-5 mr-2" />
-              Start QR Scan
-            </>
-          )}
-        </Button>
-      </div>
+          <Button
+            size="lg"
+            onClick={isScanning ? stopScanning : startScanning}
+            className={`px-8 ${
+              isScanning 
+                ? 'bg-red-500 hover:bg-red-600' 
+                : 'bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600'
+            } text-white shadow-lg ${isScanning ? 'shadow-red-500/25' : 'shadow-purple-500/25'}`}
+          >
+            {isScanning ? (
+              <>
+                <Scan className="w-5 h-5 mr-2 animate-pulse" />
+                Stop Scanning
+              </>
+            ) : (
+              <>
+                <QrCode className="w-5 h-5 mr-2" />
+                Start QR Scan
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Quick Stats */}
       <div className="grid grid-cols-3 gap-3 mt-6">
