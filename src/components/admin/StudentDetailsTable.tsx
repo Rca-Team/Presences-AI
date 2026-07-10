@@ -113,6 +113,8 @@ const StudentDetailsTable: React.FC = () => {
         if (map.has(key)) return;
 
         const avatar = pickPreferredPhotoCandidate(
+          meta?.face_model?.id_card_photo_url,
+          meta?.id_card_photo_url,
           canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
           canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
           empKey ? descriptorImageByStudentKey.get(empKey) : '',

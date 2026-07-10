@@ -184,6 +184,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           const userId = pickIdentityKey(studentKey, empKey, canonicalUserId, record.id);
           if (!uniqueStudents.has(userId)) {
             const imageCandidate = pickPreferredPhotoCandidate(
+               metadata?.face_model?.id_card_photo_url,
+               metadata?.id_card_photo_url,
               canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
               canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
               studentKey ? descriptorImageByStudentKey.get(studentKey) : (empKey ? descriptorImageByStudentKey.get(empKey) : ''),
