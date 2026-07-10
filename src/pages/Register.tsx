@@ -10,6 +10,7 @@ import { registerFace } from '@/services/FaceRecognitionService';
 import { storeFaceSample } from '@/services/face-recognition/ProgressiveTrainingService';
 import { uploadRegistrationFaceModel } from '@/services/face-recognition/TrainingDataStorageService';
 import { loadRegistrationModels } from '@/services/face-recognition/OptimizedRegistrationService';
+import { uploadImage } from '@/services/face-recognition/StorageService';
 import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
@@ -306,6 +307,23 @@ const Register = () => {
     setIsSubmitting(true);
     try {
       const userId = uuidv4();
+
+      let idCardPhotoUrl: string | null = null;
+      if (faceImage?.startsWith('data:image/')) {
+        try {
+          const idPhotoRes = await fetch(faceImage);
+          const idPhotoBlob = await idPhotoRes.blob();
+          const idPhotoFile = new File(
+            [idPhotoBlob],
+            `id-card_${validData.employeeId || userId}_${Date.now()}.jpg`,
+            { type: 'image/jpeg' }
+          );
+          idCardPhotoUrl = await uploadImage(idPhotoFile, `students/${userId}/${idPhotoFile.name}`);
+        } catch (uploadErr) {
+          console.warn('ID card photo upload failed, continuing with existing registration flow', uploadErr);
+        }
+      }
+
       const faceModelPath = await uploadRegistrationFaceModel({
         studentId: userId,
         employeeId: validData.employeeId,
@@ -339,6 +357,7 @@ const Register = () => {
           sample_count: allDescriptors.length,
           capture_mode: captureMode === 'auto' ? 'auto-10' : 'scan-3d',
           storage_model_path: faceModelPath || undefined,
+          id_card_photo_url: idCardPhotoUrl || undefined,
         }
       );
       if (registrationData) {
@@ -548,6 +567,15 @@ const Register = () => {
                             transportMode: f.transport_mode || prev.transportMode,
                             address: f.address || prev.address,
                           }));
+
+                          if (f.student_photo_data_url) {
+                            setFaceImage(f.student_photo_data_url);
+                            setFaceCaptured(false);
+                            toast({
+                              title: 'ID photo extracted',
+                              description: 'Student photo captured from ID card. Continue to 3D face scan for full training.',
+                            });
+                          }
                         }}
                       />
                       {/* Student Details */}
