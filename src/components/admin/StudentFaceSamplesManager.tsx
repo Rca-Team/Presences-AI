@@ -856,7 +856,7 @@ const StudentFaceSamplesManager: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-1">{new Date(sample.created_at).toLocaleString()}</p>
-                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                     <Button size="sm" variant="outline" className="w-full" onClick={() => openCropper(sample)} disabled={!sample.image_url}>
                       <Scissors className="w-3.5 h-3.5 mr-1" /> Edit / Crop
                     </Button>
