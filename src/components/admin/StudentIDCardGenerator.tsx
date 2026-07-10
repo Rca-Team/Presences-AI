@@ -184,6 +184,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
           const userId = pickIdentityKey(studentKey, empKey, canonicalUserId, record.id);
           if (!uniqueStudents.has(userId)) {
             const imageCandidate = pickPreferredPhotoCandidate(
+               metadata?.face_model?.id_card_photo_url,
+               metadata?.id_card_photo_url,
               canonicalUserId ? profileImageByUserId.get(canonicalUserId) : '',
               canonicalUserId ? descriptorImageByUserId.get(canonicalUserId) : '',
               studentKey ? descriptorImageByStudentKey.get(studentKey) : (empKey ? descriptorImageByStudentKey.get(empKey) : ''),
@@ -594,8 +596,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
       const usableW = PAGE_W - PAGE_MARGIN * 2;
       const usableH = PAGE_H - PAGE_MARGIN * 2;
 
-      // Fixed print layout: exactly 9 cards per page (3 × 3)
-      const columns = 3;
+      // Fixed print layout: exactly 6 cards per page (2 × 3)
+      const columns = 2;
       const rows = 3;
       const cardsPerPage = columns * rows;
 
@@ -667,7 +669,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       toast({
         title: 'PDF Ready',
-        description: `${list.length} card(s) on ${totalPages} A4 page(s) (9/page)`,
+        description: `${list.length} card(s) on ${totalPages} A4 page(s) (6/page)`,
       });
     } catch (e) {
       console.error('PDF export error:', e);

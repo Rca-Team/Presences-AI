@@ -41,6 +41,7 @@ export const registerFace = async (
     sample_count: number;
     capture_mode: 'auto-10' | 'scan-3d';
     storage_model_path?: string;
+    id_card_photo_url?: string;
   }
 ): Promise<any> => {
   try {

@@ -91,6 +91,7 @@ Required fields per person:
 - transport_mode: e.g. Bus / Walk / Private if shown
 - has_photo: boolean
 - photo_description: brief description if visible
+- photo_bbox: normalized bounding box of student face photo on card as {"x":0-1,"y":0-1,"width":0-1,"height":0-1} when visible
 
 Return ONLY valid JSON, no markdown:
 { "users": [ { ...fields above } ], "total_extracted": N, "document_type": "id_card|form|table|other", "contains_images": true }
@@ -211,7 +212,8 @@ If nothing is extractable: {"users": [], "total_extracted": 0, "reason": "..."}`
       transport_mode: user.transport_mode || user.transport || '',
       photo_url: user.photo_url || user.image_url || '',
       has_photo: user.has_photo || false,
-      photo_description: user.photo_description || ''
+      photo_description: user.photo_description || '',
+      photo_bbox: user.photo_bbox || null,
     }));
 
     console.log(`Returning ${extractedData.users.length} extracted users`);

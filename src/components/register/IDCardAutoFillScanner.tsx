@@ -18,6 +18,13 @@ export interface IDCardExtractedFields {
   blood_group?: string;
   address?: string;
   transport_mode?: string;
+  student_photo_data_url?: string;
+  photo_bbox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
 }
 
 interface Props {
@@ -37,7 +44,62 @@ const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [showCamera, setShowCamera] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+  const [lastExtractedPhoto, setLastExtractedPhoto] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+
+  const isValidBBox = (bbox: any) => {
+    if (!bbox || typeof bbox !== 'object') return false;
+    const nums = [bbox.x, bbox.y, bbox.width, bbox.height].map(Number);
+    if (nums.some((n) => Number.isNaN(n))) return false;
+    const [x, y, width, height] = nums;
+    if (width <= 0 || height <= 0) return false;
+    return x >= 0 && y >= 0 && x <= 1 && y <= 1 && width <= 1 && height <= 1;
+  };
+
+  const extractStudentPhotoFromCard = async (
+    cardDataUrl: string,
+    bbox?: { x: number; y: number; width: number; height: number }
+  ): Promise<string | null> => {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = reject;
+      el.src = cardDataUrl;
+    });
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return null;
+
+    // If AI gives a valid normalized bounding box, prefer it.
+    let x = Math.round((bbox?.x ?? 0) * w);
+    let y = Math.round((bbox?.y ?? 0) * h);
+    let cw = Math.round((bbox?.width ?? 0) * w);
+    let ch = Math.round((bbox?.height ?? 0) * h);
+
+    // Fallback heuristic for common Indian school ID layout (portrait photo at left block).
+    if (!bbox || cw < 40 || ch < 40) {
+      x = Math.round(w * 0.03);
+      y = Math.round(h * 0.26);
+      cw = Math.round(w * 0.24);
+      ch = Math.round(h * 0.47);
+    }
+
+    // Keep crop inside image boundaries.
+    x = Math.max(0, Math.min(x, w - 1));
+    y = Math.max(0, Math.min(y, h - 1));
+    cw = Math.max(1, Math.min(cw, w - x));
+    ch = Math.max(1, Math.min(ch, h - y));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 420;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    ctx.drawImage(img, x, y, cw, ch, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  };
 
   const stopCamera = () => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
@@ -100,10 +162,22 @@ const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
         toast({ title: 'No data found', description: 'Could not read this card. Try a clearer photo.', variant: 'destructive' });
         return;
       }
-      onExtracted(user);
+
+      const photoBBox = isValidBBox(user.photo_bbox) ? user.photo_bbox : undefined;
+      const extractedPhoto = await extractStudentPhotoFromCard(dataUrl, photoBBox);
+      if (extractedPhoto) setLastExtractedPhoto(extractedPhoto);
+
+      onExtracted({
+        ...user,
+        photo_bbox: photoBBox,
+        student_photo_data_url: extractedPhoto || undefined,
+      });
+
       toast({
         title: 'ID Card scanned ✨',
-        description: `Auto-filled details for ${user.name || 'student'}.`,
+        description: extractedPhoto
+          ? `Auto-filled details and extracted student photo for ${user.name || 'student'}.`
+          : `Auto-filled details for ${user.name || 'student'}.`,
       });
       setIsOpen(false);
       setPreview(null);
@@ -142,6 +216,13 @@ const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
             >
               <Camera className="w-4 h-4 mr-1.5" /> Scan ID Card
             </Button>
+
+            {lastExtractedPhoto && (
+              <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-200/70 bg-white/70 dark:bg-slate-900/40 px-2 py-2 w-fit">
+                <img src={lastExtractedPhoto} alt="Extracted student" className="h-10 w-8 rounded object-cover border border-border" />
+                <p className="text-[11px] text-muted-foreground">Student photo extracted from latest ID scan</p>
+              </div>
+            )}
           </div>
         </div>
       </motion.div>

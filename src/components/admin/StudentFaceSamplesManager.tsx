@@ -113,6 +113,8 @@ const StudentFaceSamplesManager: React.FC = () => {
   const [transferSampleId, setTransferSampleId] = useState<string | null>(null);
   const [transferTargetUserId, setTransferTargetUserId] = useState<string>('');
   const [deletingStudent, setDeletingStudent] = useState(false);
+  const [mergeTargetUserId, setMergeTargetUserId] = useState<string>('');
+  const [mergingStudent, setMergingStudent] = useState(false);
 
   const fetchSamples = async () => {
     setLoading(true);
@@ -536,6 +538,171 @@ const StudentFaceSamplesManager: React.FC = () => {
     }
   };
 
+  const handleSetAsIdCardPhoto = async (sample: FaceSample) => {
+    if (!selectedGroup || !sample.image_url) {
+      toast({ title: 'No photo', description: 'This sample does not have an image to set.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const filters: string[] = [];
+      if (selectedGroup.userId) filters.push(`user_id.eq.${selectedGroup.userId}`);
+      if (selectedGroup.employeeId) filters.push(`student_id.eq.${selectedGroup.employeeId}`);
+      if (filters.length === 0) return;
+
+      const { data: registrationRows, error: regFetchError } = await supabase
+        .from('attendance_records')
+        .select('id, device_info')
+        .eq('status', 'registered')
+        .or(filters.join(','));
+
+      if (regFetchError) throw regFetchError;
+
+      for (const row of registrationRows || []) {
+        const currentDeviceInfo = (row.device_info as Record<string, any>) || {};
+        const currentMetadata = (currentDeviceInfo.metadata as Record<string, any>) || {};
+        const currentFaceModel = (currentMetadata.face_model as Record<string, any>) || {};
+
+        const nextDeviceInfo = {
+          ...currentDeviceInfo,
+          metadata: {
+            ...currentMetadata,
+            id_card_photo_url: sample.image_url,
+            face_model: {
+              ...currentFaceModel,
+              id_card_photo_url: sample.image_url,
+            },
+          },
+        };
+
+        const { error: regUpdateError } = await supabase
+          .from('attendance_records')
+          .update({ device_info: nextDeviceInfo })
+          .eq('id', row.id);
+
+        if (regUpdateError) throw regUpdateError;
+      }
+
+      const descriptorFilters: string[] = [];
+      if (selectedGroup.userId) descriptorFilters.push(`user_id.eq.${selectedGroup.userId}`);
+      if (selectedGroup.employeeId) descriptorFilters.push(`student_id.eq.${selectedGroup.employeeId}`);
+
+      if (descriptorFilters.length > 0) {
+        const { error: descriptorUpdateError } = await supabase
+          .from('face_descriptors')
+          .update({ image_url: sample.image_url })
+          .or(descriptorFilters.join(','));
+
+        if (descriptorUpdateError) throw descriptorUpdateError;
+      }
+
+      toast({ title: 'ID card photo updated', description: 'Selected sample is now the default ID card photo.' });
+      fetchSamples();
+    } catch (error) {
+      console.error('Failed setting ID card photo:', error);
+      toast({ title: 'Update failed', description: 'Could not set this image as ID card photo.', variant: 'destructive' });
+    }
+  };
+
+  const handleMergeStudentData = async () => {
+    if (!selectedGroup || !mergeTargetUserId) {
+      toast({ title: 'Select target', description: 'Choose a student to merge into.', variant: 'destructive' });
+      return;
+    }
+
+    if (mergeTargetUserId === selectedGroup.userId) {
+      toast({ title: 'Same student', description: 'Choose a different target student.', variant: 'destructive' });
+      return;
+    }
+
+    const target = groupsMap.get(mergeTargetUserId);
+    if (!target) {
+      toast({ title: 'Not found', description: 'Target student was not found.', variant: 'destructive' });
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Merge ${selectedGroup.name} (${selectedGroup.employeeId}) into ${target.name} (${target.employeeId})?\n\nThis will move face samples and registration identity to the target student and remove duplicate registration rows.`
+    );
+    if (!confirmed) return;
+
+    setMergingStudent(true);
+    try {
+      const sourceUserId = selectedGroup.userId;
+      const sourceEmployeeId = selectedGroup.employeeId;
+      const targetUserId = target.userId;
+      const targetEmployeeId = target.employeeId;
+
+      const descriptorFilters: string[] = [];
+      if (sourceUserId) descriptorFilters.push(`user_id.eq.${sourceUserId}`);
+      if (sourceEmployeeId) descriptorFilters.push(`student_id.eq.${sourceEmployeeId}`);
+
+      if (descriptorFilters.length > 0) {
+        const { error: moveDescriptorsError } = await supabase
+          .from('face_descriptors')
+          .update({
+            user_id: targetUserId,
+            student_id: targetEmployeeId,
+            label: target.name,
+          })
+          .or(descriptorFilters.join(','));
+        if (moveDescriptorsError) throw moveDescriptorsError;
+      }
+
+      const regFilters: string[] = [];
+      if (sourceUserId) regFilters.push(`user_id.eq.${sourceUserId}`);
+      if (sourceEmployeeId) regFilters.push(`student_id.eq.${sourceEmployeeId}`);
+
+      if (regFilters.length > 0) {
+        const { error: moveRegistrationError } = await supabase
+          .from('attendance_records')
+          .update({ user_id: targetUserId, student_id: targetEmployeeId })
+          .eq('status', 'registered')
+          .or(regFilters.join(','));
+        if (moveRegistrationError) throw moveRegistrationError;
+      }
+
+      const targetRegistrationFilters: string[] = [];
+      if (targetUserId) targetRegistrationFilters.push(`user_id.eq.${targetUserId}`);
+      if (targetEmployeeId) targetRegistrationFilters.push(`student_id.eq.${targetEmployeeId}`);
+
+      if (targetRegistrationFilters.length > 0) {
+        const { data: targetRegistrations, error: fetchTargetRegsError } = await supabase
+          .from('attendance_records')
+          .select('id, timestamp')
+          .eq('status', 'registered')
+          .or(targetRegistrationFilters.join(','))
+          .order('timestamp', { ascending: false });
+
+        if (fetchTargetRegsError) throw fetchTargetRegsError;
+
+        const rowsToDelete = (targetRegistrations || []).slice(1).map((r: any) => r.id);
+        if (rowsToDelete.length > 0) {
+          const { error: deleteDupeRegsError } = await supabase
+            .from('attendance_records')
+            .delete()
+            .in('id', rowsToDelete);
+          if (deleteDupeRegsError) throw deleteDupeRegsError;
+        }
+      }
+
+      toast({
+        title: 'Students merged',
+        description: `${selectedGroup.name} data merged into ${target.name}.`,
+      });
+
+      setMergeTargetUserId('');
+      setSelectedUserId(target.userId);
+      fetchSamples();
+      syncDescriptorCache().catch(() => {});
+    } catch (error) {
+      console.error('Failed merging student data:', error);
+      toast({ title: 'Merge failed', description: 'Could not merge selected student data.', variant: 'destructive' });
+    } finally {
+      setMergingStudent(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -611,15 +778,40 @@ const StudentFaceSamplesManager: React.FC = () => {
                 <p className="text-sm font-semibold truncate">{selectedGroup.name}</p>
                 <p className="text-xs text-muted-foreground truncate">ID: {selectedGroup.employeeId}</p>
               </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDeleteStudent}
-                disabled={deletingStudent || selectedGroup.samples.length === 0}
-              >
-                <UserX className="w-4 h-4 mr-1" />
-                {deletingStudent ? 'Deleting...' : 'Delete student data'}
-              </Button>
+              <div className="flex items-center gap-2">
+                <select
+                  value={mergeTargetUserId}
+                  onChange={(e) => setMergeTargetUserId(e.target.value)}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-xs"
+                >
+                  <option value="">Merge into...</option>
+                  {groups
+                    .filter((g) => g.userId !== selectedGroup.userId)
+                    .map((g) => (
+                      <option key={g.userId} value={g.userId}>
+                        {g.name} ({g.employeeId})
+                      </option>
+                    ))}
+                </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleMergeStudentData}
+                  disabled={mergingStudent || !mergeTargetUserId}
+                >
+                  <ArrowRightLeft className="w-4 h-4 mr-1" />
+                  {mergingStudent ? 'Merging...' : 'Merge'}
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={handleDeleteStudent}
+                  disabled={deletingStudent || selectedGroup.samples.length === 0}
+                >
+                  <UserX className="w-4 h-4 mr-1" />
+                  {deletingStudent ? 'Deleting...' : 'Delete student data'}
+                </Button>
+              </div>
             </div>
           )}
           {loading ? (
@@ -664,9 +856,12 @@ const StudentFaceSamplesManager: React.FC = () => {
                     )}
                   </div>
                   <p className="text-[11px] text-muted-foreground mt-1">{new Date(sample.created_at).toLocaleString()}</p>
-                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
                     <Button size="sm" variant="outline" className="w-full" onClick={() => openCropper(sample)} disabled={!sample.image_url}>
                       <Scissors className="w-3.5 h-3.5 mr-1" /> Edit / Crop
+                    </Button>
+                    <Button size="sm" variant="outline" className="w-full" onClick={() => handleSetAsIdCardPhoto(sample)} disabled={!sample.image_url}>
+                      Set as ID photo
                     </Button>
                     <Button size="sm" variant="outline" className="w-full" onClick={() => handleDeleteSample(sample)} disabled={!sample.image_url}>
                       <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete
