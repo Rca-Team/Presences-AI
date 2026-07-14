@@ -115,6 +115,10 @@ const StudentFaceSamplesManager: React.FC = () => {
   const [deletingStudent, setDeletingStudent] = useState(false);
   const [mergeTargetUserId, setMergeTargetUserId] = useState<string>('');
   const [mergingStudent, setMergingStudent] = useState(false);
+  const [reregisteringStudent, setReregisteringStudent] = useState(false);
+
+  const isUuid = (value: string | null | undefined) =>
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
   const fetchSamples = async () => {
     setLoading(true);
@@ -656,8 +660,8 @@ const StudentFaceSamplesManager: React.FC = () => {
       if (regFilters.length > 0) {
         const { error: moveRegistrationError } = await supabase
           .from('attendance_records')
-          .update({ user_id: targetUserId, student_id: targetEmployeeId })
-          .eq('status', 'registered')
+          .update({ user_id: targetUserId, student_id: targetEmployeeId, student_name: target.name })
+          .neq('status', 'unauthorized')
           .or(regFilters.join(','));
         if (moveRegistrationError) throw moveRegistrationError;
       }
@@ -700,6 +704,146 @@ const StudentFaceSamplesManager: React.FC = () => {
       toast({ title: 'Merge failed', description: 'Could not merge selected student data.', variant: 'destructive' });
     } finally {
       setMergingStudent(false);
+    }
+  };
+
+  const handleReregisterFromExistingData = async () => {
+    if (!selectedGroup) return;
+
+    const sourceFilters: string[] = [];
+    if (selectedGroup.userId) sourceFilters.push(`user_id.eq.${selectedGroup.userId}`);
+    if (selectedGroup.employeeId) sourceFilters.push(`student_id.eq.${selectedGroup.employeeId}`);
+
+    if (sourceFilters.length === 0) {
+      toast({ title: 'Missing identity', description: 'Cannot recover this student without user/student id.', variant: 'destructive' });
+      return;
+    }
+
+    setReregisteringStudent(true);
+    try {
+      const descriptorSamples = selectedGroup.samples.filter((s) => s.source_table === 'face_descriptors');
+      const bestImageSample =
+        descriptorSamples.find((s) => !!s.image_url) ||
+        selectedGroup.samples.find((s) => !!s.image_url) ||
+        null;
+
+      const existingUuid =
+        selectedGroup.samples.map((s) => s.user_id).find((id) => isUuid(id)) ||
+        (isUuid(selectedGroup.userId) ? selectedGroup.userId : null);
+      const resolvedUserId = existingUuid || crypto.randomUUID();
+
+      const { data: contextRow } = await supabase
+        .from('attendance_records')
+        .select('id, category, class, section, device_info')
+        .neq('status', 'unauthorized')
+        .or(sourceFilters.join(','))
+        .order('timestamp', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const existingMetadata = ((contextRow as any)?.device_info as any)?.metadata || {};
+      const category = (contextRow as any)?.category || existingMetadata?.category || 'A';
+      const classValue = (contextRow as any)?.class || existingMetadata?.class_section || existingMetadata?.department || null;
+      const sectionValue = (contextRow as any)?.section || existingMetadata?.section || null;
+
+      const registrationPayload: Record<string, any> = {
+        user_id: resolvedUserId,
+        status: 'registered',
+        source: 'registration',
+        capture_mode: existingMetadata?.face_model?.capture_mode || 'scan-3d',
+        class: classValue,
+        section: sectionValue,
+        student_name: selectedGroup.name,
+        student_id: selectedGroup.employeeId,
+        category,
+        image_url: bestImageSample?.image_url || null,
+        timestamp: new Date().toISOString(),
+        device_info: {
+          type: 'recovery',
+          registration: 'true',
+          timestamp: new Date().toISOString(),
+          metadata: {
+            ...existingMetadata,
+            name: selectedGroup.name,
+            employee_id: selectedGroup.employeeId,
+            category,
+            firebase_image_url: bestImageSample?.image_url || existingMetadata?.firebase_image_url || null,
+            face_model: {
+              ...(existingMetadata?.face_model || {}),
+              id_card_photo_url:
+                existingMetadata?.face_model?.id_card_photo_url ||
+                bestImageSample?.image_url ||
+                null,
+            },
+          },
+        },
+      };
+
+      const { data: existingRegistration, error: existingRegError } = await supabase
+        .from('attendance_records')
+        .select('id')
+        .eq('status', 'registered')
+        .or(sourceFilters.join(','))
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingRegError) throw existingRegError;
+
+      if (existingRegistration?.id) {
+        const { error: updateRegError } = await supabase
+          .from('attendance_records')
+          .update(registrationPayload)
+          .eq('id', existingRegistration.id);
+        if (updateRegError) throw updateRegError;
+      } else {
+        const { error: insertRegError } = await supabase
+          .from('attendance_records')
+          .insert(registrationPayload);
+        if (insertRegError) throw insertRegError;
+      }
+
+      const descriptorIds = descriptorSamples.map((s) => s.id);
+      if (descriptorIds.length > 0) {
+        const descriptorPatch: Record<string, any> = {
+          user_id: resolvedUserId,
+          student_id: selectedGroup.employeeId,
+          student_name: selectedGroup.name,
+          label: selectedGroup.name,
+          is_active: true,
+        };
+        if (bestImageSample?.image_url) descriptorPatch.image_url = bestImageSample.image_url;
+
+        const { error: descriptorUpdateError } = await supabase
+          .from('face_descriptors')
+          .update(descriptorPatch)
+          .in('id', descriptorIds);
+        if (descriptorUpdateError) throw descriptorUpdateError;
+      }
+
+      const { error: normalizeRowsError } = await supabase
+        .from('attendance_records')
+        .update({
+          user_id: resolvedUserId,
+          student_id: selectedGroup.employeeId,
+          student_name: selectedGroup.name,
+        })
+        .neq('status', 'unauthorized')
+        .or(sourceFilters.join(','));
+      if (normalizeRowsError) throw normalizeRowsError;
+
+      toast({
+        title: 'Student re-registered',
+        description: `${selectedGroup.name} is restored using existing face samples and linked for scanning again.`,
+      });
+
+      await fetchSamples();
+      syncDescriptorCache().catch(() => {});
+    } catch (error) {
+      console.error('Failed to re-register student from existing data:', error);
+      toast({ title: 'Recovery failed', description: 'Could not re-register this student from existing samples.', variant: 'destructive' });
+    } finally {
+      setReregisteringStudent(false);
     }
   };
 
@@ -793,6 +937,15 @@ const StudentFaceSamplesManager: React.FC = () => {
                       </option>
                     ))}
                 </select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReregisterFromExistingData}
+                  disabled={reregisteringStudent || selectedGroup.samples.length === 0}
+                >
+                  <User className="w-4 h-4 mr-1" />
+                  {reregisteringStudent ? 'Re-registering...' : 'Re-register'}
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
