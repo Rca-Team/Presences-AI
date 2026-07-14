@@ -494,38 +494,64 @@ const StudentFaceSamplesManager: React.FC = () => {
 
     setDeletingStudent(true);
     try {
-      const userIds = new Set<string>();
       const recordIds: string[] = [];
       const descriptorIds: string[] = [];
       selectedGroup.samples.forEach((s) => {
-        if (s.user_id) userIds.add(s.user_id);
         if (s.source_table === 'face_descriptors') descriptorIds.push(s.id);
         else recordIds.push(s.id);
       });
 
-      if (descriptorIds.length > 0) {
-        const { error } = await supabase.from('face_descriptors').delete().in('id', descriptorIds);
-        if (error) throw error;
-      }
-      // Also nuke any descriptors keyed by this student's user_id (covers orphans not yet shown)
-      if (userIds.size > 0) {
-        const { error } = await supabase
+      // SAFEGUARD: Only touch rows explicitly visible under the selected student group.
+      // Never delete by user_id here because legacy datasets may share user_id across students.
+      const uniqueDescriptorIds = Array.from(new Set(descriptorIds));
+      const uniqueRecordIds = Array.from(new Set(recordIds));
+
+      // Snapshot rows before mutation for rollback safety.
+      let descriptorBackup: any[] = [];
+      let attendanceBackup: Array<{ id: string; image_url: string | null }> = [];
+
+      if (uniqueDescriptorIds.length > 0) {
+        const { data, error } = await supabase
           .from('face_descriptors')
-          .delete()
-          .in('user_id', Array.from(userIds));
+          .select('*')
+          .in('id', uniqueDescriptorIds);
+        if (error) throw error;
+        descriptorBackup = data || [];
+      }
+
+      if (uniqueRecordIds.length > 0) {
+        const { data, error } = await supabase
+          .from('attendance_records')
+          .select('id, image_url')
+          .in('id', uniqueRecordIds);
+        if (error) throw error;
+        attendanceBackup = data || [];
+      }
+
+      // 1) Delete only selected descriptors by primary key.
+      if (uniqueDescriptorIds.length > 0) {
+        const { error } = await supabase.from('face_descriptors').delete().in('id', uniqueDescriptorIds);
         if (error) throw error;
       }
-      if (recordIds.length > 0) {
+
+      // 2) Clear only selected captured sample images by primary key.
+      if (uniqueRecordIds.length > 0) {
         const { error } = await supabase
           .from('attendance_records')
           .update({ image_url: null })
-          .in('id', recordIds);
-        if (error) throw error;
+          .in('id', uniqueRecordIds);
+        if (error) {
+          // Rollback descriptors if second step fails.
+          if (descriptorBackup.length > 0) {
+            await supabase.from('face_descriptors').insert(descriptorBackup);
+          }
+          throw error;
+        }
       }
 
       toast({
         title: 'Student data deleted',
-        description: `Removed all face samples for ${selectedGroup.name}.`,
+        description: `Removed ${uniqueDescriptorIds.length} trained slots and ${uniqueRecordIds.length} captured samples for ${selectedGroup.name}.`,
       });
       setSelectedUserId('');
       fetchSamples();
