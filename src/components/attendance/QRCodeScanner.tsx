@@ -46,19 +46,77 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
   const webcamRef = useRef<Webcam>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number | null>(null);
+  const autofocusIntervalRef = useRef<number | null>(null);
   const isLoopActiveRef = useRef(false);
   const lastFrameAtRef = useRef(0);
   const inFlightDecodeRef = useRef(false);
+  const frameCounterRef = useRef(0);
   const recentScanRef = useRef<Map<string, number>>(new Map());
   const barcodeDetectorRef = useRef<any>(null);
 
-  const SCAN_FRAME_INTERVAL_MS = 90;
+  const SCAN_FRAME_INTERVAL_MS = 55;
+  const CENTER_SCAN_RATIO = 0.68;
+  const FULL_FRAME_SCAN_EVERY = 4;
   const DUPLICATE_SCAN_COOLDOWN_MS = 10_000;
   
   const [isScanning, setIsScanning] = useState(false);
   const [scanResult, setScanResult] = useState<{ success: boolean; name?: string } | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [lastScannedId, setLastScannedId] = useState<string | null>(null);
+  const [focusAssistEnabled, setFocusAssistEnabled] = useState(false);
+  const stopAutoFocusLoop = () => {
+    if (autofocusIntervalRef.current) {
+      window.clearInterval(autofocusIntervalRef.current);
+      autofocusIntervalRef.current = null;
+    }
+  };
+
+  const applyAutoFocus = useCallback(async () => {
+    const video = webcamRef.current?.video;
+    const stream = video?.srcObject as MediaStream | null;
+    const track = stream?.getVideoTracks?.()[0];
+    if (!track?.applyConstraints) return false;
+
+    try {
+      const capabilities = typeof track.getCapabilities === 'function' ? track.getCapabilities() : ({} as any);
+      const advanced: Record<string, unknown> = {};
+
+      if (Array.isArray((capabilities as any).focusMode)) {
+        if ((capabilities as any).focusMode.includes('continuous')) {
+          advanced.focusMode = 'continuous';
+        } else if ((capabilities as any).focusMode.includes('single-shot')) {
+          advanced.focusMode = 'single-shot';
+        }
+      }
+
+      if (typeof (capabilities as any).zoom?.max === 'number' && typeof (capabilities as any).zoom?.min === 'number') {
+        const min = Number((capabilities as any).zoom.min);
+        const max = Number((capabilities as any).zoom.max);
+        const targetZoom = Math.max(min, Math.min(max, min + (max - min) * 0.15));
+        advanced.zoom = targetZoom;
+      }
+
+      if (Object.keys(advanced).length === 0) return false;
+
+      await track.applyConstraints({ advanced: [advanced] as any });
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const startAutoFocusLoop = useCallback(async () => {
+    stopAutoFocusLoop();
+    const enabled = await applyAutoFocus();
+    setFocusAssistEnabled(enabled);
+
+    autofocusIntervalRef.current = window.setInterval(async () => {
+      if (!isLoopActiveRef.current) return;
+      const ok = await applyAutoFocus();
+      if (ok) setFocusAssistEnabled(true);
+    }, 1200);
+  }, [applyAutoFocus]);
+
 
   const normalizeValue = (value: unknown) => String(value ?? '').trim();
 
@@ -151,7 +209,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
   // Simple QR code detection using canvas
   const detectQRCode = useCallback(async () => {
-    if (inFlightDecodeRef.current || !webcamRef.current || !canvasRef.current) return;
+    if (inFlightDecodeRef.current || !webcamRef.current || !canvasRef.current || !isScanning) return;
 
     const video = webcamRef.current.video;
     if (!video || video.readyState !== 4) return;
@@ -160,8 +218,13 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    const srcWidth = video.videoWidth;
+    const srcHeight = video.videoHeight;
+    const maxWidth = 1280;
+    const scale = srcWidth > maxWidth ? maxWidth / srcWidth : 1;
+
+    canvas.width = Math.max(320, Math.round(srcWidth * scale));
+    canvas.height = Math.max(240, Math.round(srcHeight * scale));
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     inFlightDecodeRef.current = true;
@@ -171,11 +234,30 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         if (!barcodeDetectorRef.current) {
           barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         }
-        const barcodes = await barcodeDetectorRef.current.detect(canvas);
-        
-        if (barcodes.length > 0) {
-          const qrData = barcodes[0].rawValue;
-          await processQRCode(qrData);
+        frameCounterRef.current += 1;
+
+        // AI-like fast path: center ROI first (where users align QR), full-frame fallback periodically.
+        const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
+        const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
+        const roiX = Math.round((canvas.width - roiWidth) / 2);
+        const roiY = Math.round((canvas.height - roiHeight) / 2);
+
+        const roiImageData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
+        const roiCanvas = document.createElement('canvas');
+        roiCanvas.width = roiWidth;
+        roiCanvas.height = roiHeight;
+        const roiCtx = roiCanvas.getContext('2d');
+        if (!roiCtx) return;
+        roiCtx.putImageData(roiImageData, 0, 0);
+
+        let barcodes = await barcodeDetectorRef.current.detect(roiCanvas);
+
+        if (barcodes.length === 0 && frameCounterRef.current % FULL_FRAME_SCAN_EVERY === 0) {
+          barcodes = await barcodeDetectorRef.current.detect(canvas);
+        }
+
+        if (barcodes.length > 0 && barcodes[0]?.rawValue) {
+          await processQRCode(String(barcodes[0].rawValue));
         }
       }
     } catch (err) {
@@ -183,7 +265,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     } finally {
       inFlightDecodeRef.current = false;
     }
-  }, []);
+  }, [isScanning]);
 
   const processQRCode = async (qrDataString: string) => {
     const qrData = parseQRPayload(qrDataString);
@@ -261,7 +343,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         setScanResult(null);
         setLastScannedId(null);
         startScanning();
-      }, 3000);
+      }, 1200);
 
     } catch (err) {
       console.error('QR processing error:', err);
@@ -275,7 +357,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       setTimeout(() => {
         setScanResult(null);
         if (!isLoopActiveRef.current) startScanning();
-      }, 2000);
+      }, 900);
     }
   };
 
@@ -286,6 +368,9 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
     isLoopActiveRef.current = true;
     inFlightDecodeRef.current = false;
+    frameCounterRef.current = 0;
+
+    startAutoFocusLoop();
 
     const loop = async (timestamp: number) => {
       if (!isLoopActiveRef.current) return;
@@ -305,6 +390,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     setIsScanning(false);
     isLoopActiveRef.current = false;
     inFlightDecodeRef.current = false;
+    stopAutoFocusLoop();
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -317,6 +403,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       if (rafRef.current) {
         cancelAnimationFrame(rafRef.current);
       }
+      stopAutoFocusLoop();
     };
   }, []);
 
@@ -492,6 +579,11 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
           <QrCode className="w-4 h-4 text-purple-400" />
           <span className="text-sm font-medium text-purple-300">QR Scanner</span>
           <div className={`w-2 h-2 rounded-full ${isScanning ? 'bg-green-400 animate-pulse' : 'bg-slate-500'}`} />
+          {focusAssistEnabled && (
+            <Badge variant="secondary" className="h-5 px-2 text-[10px] bg-emerald-500/20 text-emerald-200 border-emerald-400/30">
+              AI Focus
+            </Badge>
+          )}
         </div>
       </div>
 
