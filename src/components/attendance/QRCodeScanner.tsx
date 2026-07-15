@@ -232,6 +232,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
     inFlightDecodeRef.current = true;
     try {
+      frameCounterRef.current += 1;
       let foundRawValue: string | null = null;
 
       // Use BarcodeDetector API if available (modern browsers)
@@ -239,8 +240,6 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         if (!barcodeDetectorRef.current) {
           barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         }
-        frameCounterRef.current += 1;
-
         // AI-like fast path: center ROI first (where users align QR), full-frame fallback periodically.
         const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
         const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);

@@ -156,6 +156,11 @@ const MultipleFaceAttendanceCapture = () => {
         return;
       }
 
+      if (videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) {
+        detectionFrameRef.current = requestAnimationFrame(detectFaces);
+        return;
+      }
+
       const now = performance.now();
       if (now - lastDetectionTime.current < 300) {
         detectionFrameRef.current = requestAnimationFrame(detectFaces);
@@ -272,6 +277,10 @@ const MultipleFaceAttendanceCapture = () => {
       console.log('Starting face detection and recognition...');
       
       // Use SSD MobileNet for high-accuracy detection with landmarks and descriptors
+      if (videoRef.current.videoWidth === 0 || videoRef.current.videoHeight === 0) {
+        throw new Error('Camera frame not ready yet. Please try again.');
+      }
+
       const fullDetections = await faceapi
         .detectAllFaces(videoRef.current, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
         .withFaceLandmarks()
