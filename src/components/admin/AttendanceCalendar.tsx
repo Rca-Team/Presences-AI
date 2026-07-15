@@ -13,6 +13,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import CaptureFaceDialog from './CaptureFaceDialog';
+import IDCardAutoFillScanner, { IDCardExtractedFields } from '@/components/register/IDCardAutoFillScanner';
+import { uploadImage } from '@/services/face-recognition/StorageService';
 
 interface AttendanceCalendarProps {
   selectedFaceId: string | null;
@@ -47,6 +49,80 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ selectedFaceId 
     transport_mode: '',
     address: '',
   });
+
+  const dataUrlToFile = (dataUrl: string, filename: string) => {
+    const [meta, b64] = dataUrl.split(',');
+    const mime = meta?.match(/data:(.*?);base64/)?.[1] || 'image/jpeg';
+    const binary = atob(b64 || '');
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new File([bytes], filename, { type: mime });
+  };
+
+  const updateStudentPhotoFromIdScan = async (studentPhotoDataUrl: string) => {
+    const identity = (selectedFace?.employee_id || selectedFace?.user_id || '').trim();
+    if (!identity) return;
+
+    const file = dataUrlToFile(studentPhotoDataUrl, `${identity}-id-scan.jpg`);
+    const photoUrl = await uploadImage(file, `id-card-updates/${Date.now()}-${identity}.jpg`, 'face-images');
+
+    let attendanceQuery = supabase.from('attendance_records').update({ image_url: photoUrl });
+    let descriptorQuery = supabase.from('face_descriptors').update({ image_url: photoUrl });
+
+    if (selectedFace?.user_id) {
+      attendanceQuery = attendanceQuery.eq('user_id', selectedFace.user_id);
+      descriptorQuery = descriptorQuery.eq('user_id', selectedFace.user_id);
+    } else {
+      attendanceQuery = attendanceQuery.eq('student_id', selectedFace?.employee_id || '');
+      descriptorQuery = descriptorQuery.eq('student_id', selectedFace?.employee_id || '');
+    }
+
+    const [{ error: attendanceError }, { error: descriptorError }] = await Promise.all([
+      attendanceQuery,
+      descriptorQuery,
+    ]);
+
+    if (attendanceError) throw attendanceError;
+    if (descriptorError) throw descriptorError;
+  };
+
+  const handleIdCardExtracted = async (f: IDCardExtractedFields) => {
+    setDetailsForm((prev) => ({
+      ...prev,
+      roll_number: f.roll_number || prev.roll_number,
+      blood_group: f.blood_group || prev.blood_group,
+      parent_name: f.parent_name || prev.parent_name,
+      parent_phone: f.parent_phone || prev.parent_phone,
+      parent_email: f.parent_email || prev.parent_email,
+      transport_mode: f.transport_mode || prev.transport_mode,
+      address: f.address || prev.address,
+    }));
+
+    setEditingDetails(true);
+
+    if (f.student_photo_data_url) {
+      try {
+        await updateStudentPhotoFromIdScan(f.student_photo_data_url);
+        await refreshSelectedFace();
+        toast({
+          title: 'Photo replaced',
+          description: 'ID-card photo has been updated in face samples.',
+        });
+      } catch (error: any) {
+        console.error('Failed to replace student photo from ID scan:', error);
+        toast({
+          title: 'Photo replace failed',
+          description: error?.message || 'Could not update photo right now.',
+          variant: 'destructive',
+        });
+      }
+    }
+
+    toast({
+      title: 'Details extracted',
+      description: 'ID-card data filled. Review and press Save.',
+    });
+  };
 
   useEffect(() => {
     if (!selectedFace) return;
@@ -197,6 +273,8 @@ const AttendanceCalendar: React.FC<AttendanceCalendarProps> = ({ selectedFaceId 
       {showDetailsPanel && (
         <Card>
           <CardContent className="p-4 space-y-4">
+            <IDCardAutoFillScanner onExtracted={handleIdCardExtracted} />
+
             <div className="flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold">Student Details</h3>
               <div className="flex items-center gap-2">
