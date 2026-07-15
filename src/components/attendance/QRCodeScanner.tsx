@@ -20,6 +20,7 @@ import {
   User,
   Clock
 } from 'lucide-react';
+import jsQR from 'jsqr';
 
 interface QRCodeScannerProps {
   onScanComplete?: (result: { success: boolean; name?: string; userId?: string }) => void;
@@ -48,11 +49,13 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
   const rafRef = useRef<number | null>(null);
   const autofocusIntervalRef = useRef<number | null>(null);
   const isLoopActiveRef = useRef(false);
+  const isProcessingScanRef = useRef(false);
   const lastFrameAtRef = useRef(0);
   const inFlightDecodeRef = useRef(false);
   const frameCounterRef = useRef(0);
   const recentScanRef = useRef<Map<string, number>>(new Map());
   const barcodeDetectorRef = useRef<any>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
   const SCAN_FRAME_INTERVAL_MS = 55;
   const CENTER_SCAN_RATIO = 0.68;
@@ -229,6 +232,8 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
     inFlightDecodeRef.current = true;
     try {
+      let foundRawValue: string | null = null;
+
       // Use BarcodeDetector API if available (modern browsers)
       if ('BarcodeDetector' in window) {
         if (!barcodeDetectorRef.current) {
@@ -257,8 +262,31 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         }
 
         if (barcodes.length > 0 && barcodes[0]?.rawValue) {
-          await processQRCode(String(barcodes[0].rawValue));
+          foundRawValue = String(barcodes[0].rawValue);
         }
+      }
+
+      // Fallback path for browsers/devices where BarcodeDetector is missing or unreliable.
+      if (!foundRawValue) {
+        const tryDecodeJsQr = (x: number, y: number, width: number, height: number): string | null => {
+          const imageData = ctx.getImageData(x, y, width, height);
+          const decoded = jsQR(imageData.data, width, height, { inversionAttempts: 'attemptBoth' });
+          return decoded?.data || null;
+        };
+
+        const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
+        const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
+        const roiX = Math.round((canvas.width - roiWidth) / 2);
+        const roiY = Math.round((canvas.height - roiHeight) / 2);
+
+        foundRawValue = tryDecodeJsQr(roiX, roiY, roiWidth, roiHeight);
+        if (!foundRawValue && frameCounterRef.current % FULL_FRAME_SCAN_EVERY === 0) {
+          foundRawValue = tryDecodeJsQr(0, 0, canvas.width, canvas.height);
+        }
+      }
+
+      if (foundRawValue) {
+        await processQRCode(foundRawValue);
       }
     } catch (err) {
       // Silently fail for detection errors
@@ -267,7 +295,39 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     }
   }, [isLoopActiveRef]);
 
+  const playSuccessSound = () => {
+    try {
+      const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!Ctx) return;
+
+      if (!audioContextRef.current) {
+        audioContextRef.current = new Ctx();
+      }
+
+      const ctx = audioContextRef.current;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.09);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.16, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.16);
+    } catch {
+      // ignore audio failures
+    }
+  };
+
   const processQRCode = async (qrDataString: string) => {
+    if (isProcessingScanRef.current) return;
     const qrData = parseQRPayload(qrDataString);
     if (!qrData) {
       setScanResult({ success: false });
@@ -282,9 +342,13 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       return;
     }
 
+    isProcessingScanRef.current = true;
     try {
       const identity = getScanIdentity(qrData);
-      if (!identity) return;
+      if (!identity) {
+        isProcessingScanRef.current = false;
+        return;
+      }
       
       // Prevent duplicate scans within cooldown window (spam protection)
       if (isDuplicateScan(identity)) return;
@@ -296,7 +360,6 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       }
       
       setLastScannedId(qrData.user_id || qrData.id || attendanceTargetId);
-      stopScanning();
       
       // Record attendance — use the admin-configured cutoff time
       const cutoff = await getAttendanceCutoffTime();
@@ -327,6 +390,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       );
 
       setScanResult({ success: true, name: qrData.name });
+      playSuccessSound();
       
       toast({
         title: "✓ Attendance Recorded",
@@ -338,12 +402,14 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       // Parent channels + local/background push in one unified flow
       sendAutoParentNotification(attendanceTargetId, qrData.name, status).catch(() => undefined);
 
-      // Reset after 3 seconds, then auto-restart scanner loop
+      // Keep scanning continuously; just clear visual badge quickly.
       setTimeout(() => {
         setScanResult(null);
+      }, 900);
+
+      setTimeout(() => {
         setLastScannedId(null);
-        startScanning();
-      }, 1200);
+      }, 1000);
 
     } catch (err) {
       console.error('QR processing error:', err);
@@ -356,8 +422,9 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
       
       setTimeout(() => {
         setScanResult(null);
-        if (!isLoopActiveRef.current) startScanning();
       }, 900);
+    } finally {
+      isProcessingScanRef.current = false;
     }
   };
 
@@ -390,6 +457,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     setIsScanning(false);
     isLoopActiveRef.current = false;
     inFlightDecodeRef.current = false;
+    isProcessingScanRef.current = false;
     stopAutoFocusLoop();
     if (rafRef.current) {
       cancelAnimationFrame(rafRef.current);
