@@ -209,7 +209,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
 
   // Simple QR code detection using canvas
   const detectQRCode = useCallback(async () => {
-    if (inFlightDecodeRef.current || !webcamRef.current || !canvasRef.current || !isScanning) return;
+    if (inFlightDecodeRef.current || !webcamRef.current || !canvasRef.current || !isLoopActiveRef.current) return;
 
     const video = webcamRef.current.video;
     if (!video || video.readyState !== 4) return;
@@ -265,7 +265,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
     } finally {
       inFlightDecodeRef.current = false;
     }
-  }, [isScanning]);
+  }, [isLoopActiveRef]);
 
   const processQRCode = async (qrDataString: string) => {
     const qrData = parseQRPayload(qrDataString);
