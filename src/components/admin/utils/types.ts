@@ -5,6 +5,8 @@ export interface FaceInfo {
   recordId: string; // The actual database record ID
   user_id?: string;
   name: string;
+  class?: string;
+  section?: string;
   employee_id: string;
   department: string;
   position: string;
