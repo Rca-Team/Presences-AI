@@ -10,6 +10,7 @@ export interface IDCardExtractedFields {
   employee_id?: string;
   roll_number?: string;
   department?: string;
+  position?: string;
   email?: string;
   phone?: string;
   parent_name?: string;
@@ -29,13 +30,19 @@ export interface IDCardExtractedFields {
 
 interface Props {
   onExtracted: (fields: IDCardExtractedFields) => void;
+  extractPhoto?: boolean;
+  showExtractedPhotoPreview?: boolean;
 }
 
 /**
  * Portrait ID-card scanner that captures a card via camera or upload,
  * sends it to the AI extraction edge function, and returns parsed fields.
  */
-const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
+const IDCardAutoFillScanner: React.FC<Props> = ({
+  onExtracted,
+  extractPhoto = true,
+  showExtractedPhotoPreview = true,
+}) => {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -164,7 +171,9 @@ const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
       }
 
       const photoBBox = isValidBBox(user.photo_bbox) ? user.photo_bbox : undefined;
-      const extractedPhoto = await extractStudentPhotoFromCard(dataUrl, photoBBox);
+      const extractedPhoto = extractPhoto
+        ? await extractStudentPhotoFromCard(dataUrl, photoBBox)
+        : null;
       if (extractedPhoto) setLastExtractedPhoto(extractedPhoto);
 
       onExtracted({
@@ -217,7 +226,7 @@ const IDCardAutoFillScanner: React.FC<Props> = ({ onExtracted }) => {
               <Camera className="w-4 h-4 mr-1.5" /> Scan ID Card
             </Button>
 
-            {lastExtractedPhoto && (
+      {showExtractedPhotoPreview && lastExtractedPhoto && (
               <div className="mt-3 flex items-center gap-2 rounded-lg border border-blue-200/70 bg-white/70 dark:bg-slate-900/40 px-2 py-2 w-fit">
                 <img src={lastExtractedPhoto} alt="Extracted student" className="h-10 w-8 rounded object-cover border border-border" />
                 <p className="text-[11px] text-muted-foreground">Student photo extracted from latest ID scan</p>
