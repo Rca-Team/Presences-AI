@@ -57,9 +57,8 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
   const barcodeDetectorRef = useRef<any>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
 
-  const SCAN_FRAME_INTERVAL_MS = 55;
+  const SCAN_FRAME_INTERVAL_MS = 40;
   const CENTER_SCAN_RATIO = 0.68;
-  const FULL_FRAME_SCAN_EVERY = 4;
   const DUPLICATE_SCAN_COOLDOWN_MS = 10_000;
   
   const [isScanning, setIsScanning] = useState(false);
@@ -240,24 +239,24 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
         if (!barcodeDetectorRef.current) {
           barcodeDetectorRef.current = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
         }
-        // AI-like fast path: center ROI first (where users align QR), full-frame fallback periodically.
-        const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
-        const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
-        const roiX = Math.round((canvas.width - roiWidth) / 2);
-        const roiY = Math.round((canvas.height - roiHeight) / 2);
+        // Full-frame first so QR can be recognized anywhere in camera view.
+        let barcodes = await barcodeDetectorRef.current.detect(canvas);
 
-        const roiImageData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
-        const roiCanvas = document.createElement('canvas');
-        roiCanvas.width = roiWidth;
-        roiCanvas.height = roiHeight;
-        const roiCtx = roiCanvas.getContext('2d');
-        if (!roiCtx) return;
-        roiCtx.putImageData(roiImageData, 0, 0);
+        // Fallback ROI (slightly faster on some low-end devices if full-frame misses).
+        if (barcodes.length === 0) {
+          const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
+          const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
+          const roiX = Math.round((canvas.width - roiWidth) / 2);
+          const roiY = Math.round((canvas.height - roiHeight) / 2);
 
-        let barcodes = await barcodeDetectorRef.current.detect(roiCanvas);
-
-        if (barcodes.length === 0 && frameCounterRef.current % FULL_FRAME_SCAN_EVERY === 0) {
-          barcodes = await barcodeDetectorRef.current.detect(canvas);
+          const roiImageData = ctx.getImageData(roiX, roiY, roiWidth, roiHeight);
+          const roiCanvas = document.createElement('canvas');
+          roiCanvas.width = roiWidth;
+          roiCanvas.height = roiHeight;
+          const roiCtx = roiCanvas.getContext('2d');
+          if (!roiCtx) return;
+          roiCtx.putImageData(roiImageData, 0, 0);
+          barcodes = await barcodeDetectorRef.current.detect(roiCanvas);
         }
 
         if (barcodes.length > 0 && barcodes[0]?.rawValue) {
@@ -273,14 +272,15 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
           return decoded?.data || null;
         };
 
-        const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
-        const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
-        const roiX = Math.round((canvas.width - roiWidth) / 2);
-        const roiY = Math.round((canvas.height - roiHeight) / 2);
+        // Full-frame first for "detect from anywhere" behavior.
+        foundRawValue = tryDecodeJsQr(0, 0, canvas.width, canvas.height);
 
-        foundRawValue = tryDecodeJsQr(roiX, roiY, roiWidth, roiHeight);
-        if (!foundRawValue && frameCounterRef.current % FULL_FRAME_SCAN_EVERY === 0) {
-          foundRawValue = tryDecodeJsQr(0, 0, canvas.width, canvas.height);
+        if (!foundRawValue) {
+          const roiWidth = Math.round(canvas.width * CENTER_SCAN_RATIO);
+          const roiHeight = Math.round(canvas.height * CENTER_SCAN_RATIO);
+          const roiX = Math.round((canvas.width - roiWidth) / 2);
+          const roiY = Math.round((canvas.height - roiHeight) / 2);
+          foundRawValue = tryDecodeJsQr(roiX, roiY, roiWidth, roiHeight);
         }
       }
 
@@ -567,7 +567,7 @@ const QRCodeScanner: React.FC<QRCodeScannerProps> = ({
                   ◎ SCANNING FOR QR CODE...
                 </p>
                 <p className="text-sm text-purple-300 mt-1">
-                  Position the QR code within the frame
+                  Hold QR anywhere in camera view
                 </p>
               </motion.div>
 
