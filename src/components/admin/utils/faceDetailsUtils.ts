@@ -69,6 +69,8 @@ export const fetchSelectedFace = async (faceId: string): Promise<FaceInfo> => {
           recordId: faceId,
           user_id: data.user_id,
           name: metadata.name || 'Unknown Student',
+          class: metadata.class || '',
+          section: metadata.section || '',
           employee_id: metadata.employee_id || data.user_id || faceId,
           department: metadata.department || 'N/A',
           position: metadata.position || 'Student',
