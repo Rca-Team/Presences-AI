@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { getCategoryLabel } from '@/constants/schoolConfig';
@@ -77,6 +78,8 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
   const [isLoading, setIsLoading] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [previewStudent, setPreviewStudent] = useState<StudentData | null>(null);
+  const [printSizePercent, setPrintSizePercent] = useState(100);
+  const [printGapMm, setPrintGapMm] = useState(5);
   const cardRef = useRef<HTMLDivElement>(null);
   const refreshTimerRef = useRef<number | null>(null);
 
@@ -569,6 +572,48 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
    * Build a multi-page A4 PDF with multiple normal ID-size cards per page.
    * Keeps the full card UI visible (no cropping) while avoiding one-card-per-A4 output.
    */
+  const getPrintLayout = (sizePercent: number, gapMm: number) => {
+    const PAGE_W = 210;
+    const PAGE_H = 297;
+    const PAGE_MARGIN = 10;
+
+    // Fixed print layout: exactly 6 cards per page (2 × 3)
+    const columns = 2;
+    const rows = 3;
+
+    // Keep the same card artwork ratio.
+    const CARD_SOURCE_W = 420;
+    const CARD_SOURCE_H = 760;
+    const CARD_ASPECT = CARD_SOURCE_W / CARD_SOURCE_H;
+
+    const usableW = PAGE_W - PAGE_MARGIN * 2;
+    const usableH = PAGE_H - PAGE_MARGIN * 2;
+
+    const maxCardWFromGrid = (usableW - (columns - 1) * gapMm) / columns;
+    const maxCardHFromGrid = (usableH - (rows - 1) * gapMm) / rows;
+    const maxFitCardH = Math.min(maxCardHFromGrid, maxCardWFromGrid / CARD_ASPECT);
+
+    // 88mm gives a bigger physical card than before; user can scale around it.
+    const baseCardH = 88;
+    const requestedCardH = baseCardH * (sizePercent / 100);
+    const CARD_H = Math.min(requestedCardH, maxFitCardH);
+    const CARD_W = CARD_H * CARD_ASPECT;
+
+    const contentW = columns * CARD_W + (columns - 1) * gapMm;
+    const contentH = rows * CARD_H + (rows - 1) * gapMm;
+
+    return {
+      columns,
+      rows,
+      cardsPerPage: columns * rows,
+      CARD_W,
+      CARD_H,
+      CARD_GAP: gapMm,
+      START_X: (PAGE_W - contentW) / 2,
+      START_Y: (PAGE_H - contentH) / 2,
+    };
+  };
+
   const buildPDFFromStudents = async (
     list: StudentData[],
     opts: { autoPrint?: boolean; filename?: string }
@@ -579,40 +624,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
     }
     setIsGenerating(true);
     try {
-      // A4 portrait in mm
-      const PAGE_W = 210;
-      const PAGE_H = 297;
-      const PAGE_MARGIN = 10;
-      const CARD_GAP = 5;
-
-      // Keep the same card artwork ratio and map it to a practical physical ID-card height.
-      // (Portrait orientation card; full content is scaled, not cropped.)
-      const CARD_SOURCE_W = 420;
-      const CARD_SOURCE_H = 760;
-      const CARD_ASPECT = CARD_SOURCE_W / CARD_SOURCE_H;
-      const TARGET_CARD_H = 86; // close to standard ID card physical height in mm
-      const baseCardH = TARGET_CARD_H;
-
-      const usableW = PAGE_W - PAGE_MARGIN * 2;
-      const usableH = PAGE_H - PAGE_MARGIN * 2;
-
-      // Fixed print layout: exactly 6 cards per page (2 × 3)
-      const columns = 2;
-      const rows = 3;
-      const cardsPerPage = columns * rows;
-
-      // Compute max card size that fits a 3x3 grid while preserving card aspect ratio.
-      const maxCardWFromGrid = (usableW - (columns - 1) * CARD_GAP) / columns;
-      const maxCardHFromGrid = (usableH - (rows - 1) * CARD_GAP) / rows;
-
-      const fittedCardH = Math.min(maxCardHFromGrid, maxCardWFromGrid / CARD_ASPECT);
-      const CARD_H = Math.min(baseCardH, fittedCardH);
-      const CARD_W = CARD_H * CARD_ASPECT;
-
-      const contentW = columns * CARD_W + (columns - 1) * CARD_GAP;
-      const contentH = rows * CARD_H + (rows - 1) * CARD_GAP;
-      const START_X = (PAGE_W - contentW) / 2;
-      const START_Y = (PAGE_H - contentH) / 2;
+      const { columns, cardsPerPage, CARD_W, CARD_H, CARD_GAP, START_X, START_Y } = getPrintLayout(printSizePercent, printGapMm);
 
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
 
@@ -669,7 +681,7 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
 
       toast({
         title: 'PDF Ready',
-        description: `${list.length} card(s) on ${totalPages} A4 page(s) (6/page)`,
+        description: `${list.length} card(s) on ${totalPages} A4 page(s) (6/page, ${Math.round(CARD_H)}mm height)`,
       });
     } catch (e) {
       console.error('PDF export error:', e);
@@ -726,6 +738,38 @@ const StudentIDCardGenerator: React.FC<StudentIDCardGeneratorProps> = ({ student
                 <label htmlFor="select-all" className="text-sm font-medium cursor-pointer">
                   Select All ({students.length})
                 </label>
+              </div>
+
+              <div className="w-full rounded-lg border border-border/60 p-3 sm:p-4 bg-muted/20 space-y-3">
+                <p className="text-sm font-medium">PDF print layout (6 cards/page)</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Card size</span>
+                      <span>{printSizePercent}%</span>
+                    </div>
+                    <Slider
+                      value={[printSizePercent]}
+                      min={85}
+                      max={115}
+                      step={1}
+                      onValueChange={(v) => setPrintSizePercent(v[0] ?? 100)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span>Gap between cards</span>
+                      <span>{printGapMm}mm</span>
+                    </div>
+                    <Slider
+                      value={[printGapMm]}
+                      min={2}
+                      max={10}
+                      step={1}
+                      onValueChange={(v) => setPrintGapMm(v[0] ?? 5)}
+                    />
+                  </div>
+                </div>
               </div>
               
               <div className="flex flex-wrap items-center gap-2">
