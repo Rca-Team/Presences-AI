@@ -124,14 +124,33 @@ export const registerFace = async (
 
     console.log('Inserting attendance record with metadata');
     
-    // Get authenticated user if available
+    // Get authenticated user if available (fallback only)
     const { data: { user } } = await supabase.auth.getUser();
-    
-    // Use authenticated user's ID if available, otherwise use provided userId or null
-    const effectiveUserId = user?.id || userId || null;
-    console.log('Using user ID:', effectiveUserId);
-    
-    // Insert registration record - user_id can now be null since we removed FK constraint
+
+    // Avoid duplicate registration rows for the same admission number.
+    // If an existing "registered" row exists, refresh it instead of inserting a new one.
+    let existingRegistrationId: string | null = null;
+    let existingRegistrationUserId: string | null = null;
+    if (employee_id?.trim()) {
+      const { data: existingRegistration } = await supabase
+        .from('attendance_records')
+        .select('id, user_id')
+        .eq('status', 'registered')
+        .eq('student_id', employee_id.trim())
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      existingRegistrationId = existingRegistration?.id ?? null;
+      existingRegistrationUserId = existingRegistration?.user_id ?? null;
+    }
+
+    // Use a stable student identity id.
+    // Priority: existing student record -> passed student id -> auth user (fallback)
+    const stableStudentUserId = existingRegistrationUserId || userId || user?.id || null;
+    console.log('Using stable student user ID:', stableStudentUserId);
+
+    // Insert/update registration record
     const insertData: Record<string, any> = {
       timestamp: new Date().toISOString(),
       status: 'registered',
@@ -148,24 +167,8 @@ export const registerFace = async (
     };
     
     // Only include user_id if we have one
-    if (effectiveUserId) {
-      insertData.user_id = effectiveUserId;
-    }
-
-    // Avoid duplicate registration rows for the same admission number.
-    // If an existing "registered" row exists, refresh it instead of inserting a new one.
-    let existingRegistrationId: string | null = null;
-    if (employee_id?.trim()) {
-      const { data: existingRegistration } = await supabase
-        .from('attendance_records')
-        .select('id')
-        .eq('status', 'registered')
-        .eq('student_id', employee_id.trim())
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      existingRegistrationId = existingRegistration?.id ?? null;
+    if (stableStudentUserId) {
+      insertData.user_id = stableStudentUserId;
     }
 
     let recordData: any = null;
@@ -202,6 +205,7 @@ export const registerFace = async (
     // We CANNOT use effectiveUserId (the admin's auth UUID) because all students
     // registered in one session would share that UUID, collapsing them into one
     // identity inside getAllTrainedDescriptors() which groups by user_id.
+    let descriptorUserIdUsed: string | null = null;
     if (faceDescriptorString) {
       const studentEmployeeId = employee_id?.trim() || null;
 
@@ -222,7 +226,8 @@ export const registerFace = async (
 
       // 2. Generate a stable per-student UUID (reuse existing, or create fresh)
       //    Never use the admin's effectiveUserId here.
-      const studentDescriptorUserId = existingFdUserId ?? uuidv4();
+      const studentDescriptorUserId = existingFdUserId ?? stableStudentUserId ?? uuidv4();
+      descriptorUserIdUsed = studentDescriptorUserId;
 
       const fdPayload: Record<string, any> = {
         user_id: studentDescriptorUserId,
@@ -263,8 +268,14 @@ export const registerFace = async (
       }
     }
 
-    console.log('Registration completed successfully:', recordData);
-    return recordData;
+    const enrichedRecordData = {
+      ...recordData,
+      registration_user_id: stableStudentUserId,
+      descriptor_user_id: descriptorUserIdUsed ?? stableStudentUserId,
+    };
+
+    console.log('Registration completed successfully:', enrichedRecordData);
+    return enrichedRecordData;
   } catch (error: any) {
     console.error('Face registration failed:', error);
     throw error;

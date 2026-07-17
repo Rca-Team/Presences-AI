@@ -361,9 +361,15 @@ const Register = () => {
         }
       );
       if (registrationData) {
+        const descriptorOwnerUserId =
+          registrationData.descriptor_user_id ||
+          registrationData.registration_user_id ||
+          registrationData.user_id ||
+          userId;
+
         // Store ALL 3D scan samples in face_descriptors for multi-angle matching
         if (allDescriptors.length > 0) {
-          console.log(`Storing ${allDescriptors.length} 3D scan samples for user ${userId}`);
+          console.log(`Storing ${allDescriptors.length} 3D scan samples for user ${descriptorOwnerUserId}`);
            for (let i = 0; i < allDescriptors.length; i++) {
              const descriptor = allDescriptors[i];
              const shotImage = allFaceImages[i];
@@ -376,7 +382,7 @@ const Register = () => {
                  console.warn(`Could not convert captured shot #${i + 1} to blob`, shotErr);
                }
              }
-             await storeFaceSample(userId, descriptor, shotBlob, validData.name, 1.0);
+              await storeFaceSample(descriptorOwnerUserId, descriptor, shotBlob, validData.name, 1.0);
           }
           console.log('All 3D scan samples stored successfully');
         }
